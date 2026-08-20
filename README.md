@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Alex Home
 
-## Getting Started
+The client-facing surface for the Alex engine — a branded, multi-client
+workspace where a client sees their finished work, approves it, and requests
+more. This app is the **face**, not the brain: it reads The Gate and the Context
+API, it never re-implements them.
 
-First, run the development server:
+- **Stack:** Next.js (App Router) + TypeScript, Tailwind, deployed on Vercel.
+- **Data + auth:** Supabase (per-client isolation via Row Level Security).
+- **Scheduler:** Vercel Cron (added in Phase 3).
+
+Build status: **Phase 0 — blank app, live on Vercel.** No screens yet.
+
+## Environment variables
+
+Copy `.env.example` to `.env.local` and fill in the values. `.env.local` is
+gitignored and must never be committed. Keys never go in code.
+
+| Variable | Where to get it | Notes |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL | Public, safe in browser |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon key | Public, safe in browser |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → service_role key | **Server only.** Full admin. Not used until Phase 2 |
+
+The same three variables must also be added in **Vercel → Project → Settings →
+Environment Variables** so the deployed app can reach Supabase.
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open http://localhost:3000.
