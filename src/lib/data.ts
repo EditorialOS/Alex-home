@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Deliverable, StandingOrder, Workspace } from "@/lib/types";
+import type {
+  Deliverable,
+  DeliverableEvent,
+  StandingOrder,
+  Workspace,
+} from "@/lib/types";
 
 /** All workspaces, for the left-hand client switcher. */
 export async function getWorkspaces(): Promise<Workspace[]> {
@@ -49,6 +54,19 @@ export async function getDeliverable(id: string): Promise<Deliverable | null> {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+export async function getDeliverableEvents(
+  deliverableId: string,
+): Promise<DeliverableEvent[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("deliverable_events")
+    .select("*")
+    .eq("deliverable_id", deliverableId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function getStandingOrders(

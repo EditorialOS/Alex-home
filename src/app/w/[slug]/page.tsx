@@ -1,5 +1,5 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { insertTestDeliverable } from "@/app/actions";
 import { DeliverableCard } from "@/components/DeliverableCard";
 import { StandingOrdersPanel } from "@/components/StandingOrdersPanel";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
@@ -12,10 +12,14 @@ import {
 
 export default async function WorkspacePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ brief?: string }>;
 }) {
   const { slug } = await params;
+  const { brief } = await searchParams;
+  const briefQueued = brief === "queued";
 
   const [workspaces, workspace] = await Promise.all([
     getWorkspaces(),
@@ -64,18 +68,20 @@ export default async function WorkspacePage({
             </div>
 
             {!readOnly ? (
-              <form action={insertTestDeliverable}>
-                <input type="hidden" name="slug" value={slug} />
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50"
-                  title="Operator-only — temporary stand-in for the mailbox (Phase 2)"
-                >
-                  + Insert test deliverable
-                </button>
-              </form>
+              <Link
+                href={`/w/${slug}/new-brief`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-neutral-700"
+              >
+                + New brief
+              </Link>
             ) : null}
           </div>
+
+          {briefQueued ? (
+            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Brief submitted — it&rsquo;s in the queue for the engine to pick up.
+            </div>
+          ) : null}
 
           {deliverables.length === 0 ? (
             <div className="rounded-xl border border-dashed border-neutral-300 bg-white/50 px-6 py-16 text-center">
@@ -85,7 +91,7 @@ export default async function WorkspacePage({
               <p className="mt-1 text-sm text-neutral-400">
                 {readOnly
                   ? "Finished work will appear here."
-                  : "Click “Insert test deliverable” to drop a sample newsletter into the feed."}
+                  : "Finished work from the engine lands here. Submit a brief to request more."}
               </p>
             </div>
           ) : (

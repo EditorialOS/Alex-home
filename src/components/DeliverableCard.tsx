@@ -48,6 +48,7 @@ export function DeliverableCard({
           <form action={approveDeliverable}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="id" value={d.id} />
+            <input type="hidden" name="workspace_id" value={d.workspace_id} />
             <button
               type="submit"
               className="inline-flex items-center rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-neutral-700"
