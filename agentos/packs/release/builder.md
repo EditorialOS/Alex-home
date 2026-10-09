@@ -42,14 +42,14 @@ failure_modes:
   - trigger: "Build farm busy"
     symptom: "The call times out while the build queue is full"
     conductor_action: "Retry once after 60 seconds."
-    on: timeout
+    when: timeout
     action: retry
     retries: 1
     delay_seconds: 60
   - trigger: "Branch not found"
     symptom: "The error says the branch does not exist"
     conductor_action: "Ask a person for the right branch name."
-    on: error
+    when: error
     match: ["branch not found"]
     action: needs-human
 ```

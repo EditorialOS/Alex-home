@@ -34,7 +34,7 @@ failure_modes:
   - trigger: "Cold start"
     symptom: "The first call after an idle period times out"
     conductor_action: "Retry once after 10 seconds. The server is warm by then."
-    on: timeout
+    when: timeout
     action: retry
     retries: 1
     delay_seconds: 10

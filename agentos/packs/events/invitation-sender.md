@@ -41,7 +41,7 @@ failure_modes:
   - trigger: "Guest list missing"
     symptom: "The error says there is no guest list"
     conductor_action: "Ask the organizer for the guest list, then retry with it as the note."
-    on: error
+    when: error
     match: ["no guest list"]
     action: needs-human
 ```

@@ -27,11 +27,9 @@ capabilities:
       - id: build
         assigned_agent: builder
         capability_match: build-release
-        depends_on: []
       - id: test
         assigned_agent: test-runner
         capability_match: run-tests
-        depends_on: [build]
 ```
 
 ## Rules

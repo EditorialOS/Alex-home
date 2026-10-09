@@ -7,7 +7,7 @@
 - **role**: Checks employment history and references for one candidate through an outside provider.
 
 ## Interface
-The provider works through a queue: the kernel drops a job file, the provider picks it up and returns the result through the API, often days later. No endpoint is needed.
+The provider works through a queue: the kernel drops a job file, and a small bridge script hands it to the provider, then calls `resolve` with the result, often days later. No endpoint is needed.
 
 - **runtime**: `queue`
 
@@ -35,7 +35,7 @@ failure_modes:
   - trigger: "Consent missing"
     symptom: "The provider returns 'consent missing'"
     conductor_action: "Ask the recruiter to collect the candidate's consent, then retry."
-    on: error
+    when: error
     match: ["consent missing"]
     action: needs-human
 ```

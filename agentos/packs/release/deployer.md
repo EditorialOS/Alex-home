@@ -44,13 +44,13 @@ failure_modes:
   - trigger: "Deploy plan sent back"
     symptom: "The approver rejects the plan with a note"
     conductor_action: "Write the plan again using the approver's note."
-    on: rejected
+    when: rejected
     action: revise
     retries: 1
   - trigger: "Health check failed after rollout"
     symptom: "The deploy returns an error that mentions a health check"
     conductor_action: "Stop. A person checks production and decides whether to roll back."
-    on: error
+    when: error
     match: ["health check"]
     action: needs-human
 ```
@@ -58,8 +58,8 @@ failure_modes:
 ## Dependencies
 ```yaml
 dependencies:
-  required:
+  required: []
+  optional:
     - agent_id: build-and-test
       reason: "Only a built and tested update can be deployed."
-  optional: []
 ```

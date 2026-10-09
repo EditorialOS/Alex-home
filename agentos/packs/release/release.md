@@ -78,7 +78,7 @@ This rule covers everything beneath a release node, including any card added to 
 rules:
   - id: scan-before-deploy
     kind: before
-    first: {agent_id: security-scan}
+    first: {agent_id: security-scan, capability: [full-scan, quick-scan]}
     then: {agent_id: deployer}
     reason: "Nothing is planned for production or deployed until the same build has been scanned."
 ```
@@ -97,7 +97,7 @@ failure_modes:
   - trigger: "A release step failed"
     symptom: "A child ended failed or blocked"
     conductor_action: "Stop. A person decides whether to retry the failed step or abandon this release."
-    on: error
+    when: error
     match: ["children failed"]
     action: needs-human
 ```

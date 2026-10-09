@@ -34,7 +34,7 @@ failure_modes:
   - trigger: "Offer sent back"
     symptom: "The approver rejects the draft with a note"
     conductor_action: "Draft again using the approver's note."
-    on: rejected
+    when: rejected
     action: revise
     retries: 1
 ```

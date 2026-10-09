@@ -59,6 +59,6 @@ failure_modes:
   - trigger: "Planner declined"
     symptom: "Claude refused to plan the event"
     conductor_action: "A person plans this event by hand."
-    on: refusal
+    when: refusal
     action: needs-human
 ```

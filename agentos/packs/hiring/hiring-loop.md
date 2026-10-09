@@ -72,7 +72,7 @@ failure_modes:
   - trigger: "A hiring step failed"
     symptom: "A child ended failed or blocked"
     conductor_action: "Tell the hiring manager which step stopped and why."
-    on: error
+    when: error
     match: ["children failed"]
     action: needs-human
 ```

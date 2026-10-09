@@ -1,6 +1,6 @@
 # Root
 
-The front door. Every mission starts here unless the request names another root.
+The front door. Every mission starts here.
 
 ## Identity
 - **agent_id**: `root`
@@ -20,7 +20,7 @@ routes_to:
 ```
 
 ## Capabilities
-A request whose first word matches a signal is routed with no Claude call. Anything else is classified by Claude into one of these capabilities. If none fits, Claude plans it over `routes_to`.
+A request whose first word matches a signal is routed with no Claude call. Anything else is classified by Claude into one of these capabilities. If none fits, a person is asked.
 
 ```yaml
 capabilities:
@@ -33,7 +33,6 @@ capabilities:
       - id: event
         assigned_agent: event-planner
         capability_match: plan-event
-        depends_on: []
   - id: ship-release
     description: "Ship a software update: build, test, scan, changelog, deploy."
     complexity: high
@@ -43,7 +42,6 @@ capabilities:
       - id: release
         assigned_agent: release
         capability_match: ship-update
-        depends_on: []
   - id: ship-hotfix
     description: "Ship an urgent fix: build, test, quick scan, deploy."
     complexity: high
@@ -53,7 +51,6 @@ capabilities:
       - id: hotfix
         assigned_agent: release
         capability_match: hotfix
-        depends_on: []
   - id: hire
     description: "Run a hiring loop for one role: screen, interview, check, offer."
     complexity: high
@@ -63,7 +60,6 @@ capabilities:
       - id: hiring
         assigned_agent: hiring-loop
         capability_match: run-hiring-loop
-        depends_on: []
 ```
 
 ## Constraints
@@ -74,12 +70,3 @@ constraints:
   cost_per_run_usd: 0.05
 ```
 
-## Failure modes
-No `action` here: this entry is advice that Claude sees when it plans, exactly as in v1.
-
-```yaml
-failure_modes:
-  - trigger: "Request fits no pack"
-    symptom: "Nothing in routes_to matches what was asked"
-    conductor_action: "Do not guess. Return no plan, so a person can ask the requester to use /event, /release, /hotfix or /hire."
-```

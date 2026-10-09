@@ -29,18 +29,23 @@ constraints:
 ```
 
 ## Failure modes
+The last entry has no `action`: it is advice that Claude sees when it plans an event, as in v1.
+
 ```yaml
 failure_modes:
   - trigger: "Nothing available"
     symptom: "The task fails with 'no availability'"
     conductor_action: "Ask a person to move the date or widen the area."
-    on: error
+    when: error
     match: ["no availability"]
     action: needs-human
   - trigger: "Providers slow to reply"
     symptom: "The task is still working after four hours"
     conductor_action: "Cancel the task and start one more."
-    on: timeout
+    when: timeout
     action: retry
     retries: 1
+  - trigger: "Large group"
+    symptom: "More than 200 guests, so few single venues fit"
+    conductor_action: "Plan one venue search per area of the city, each with its own budget check."
 ```

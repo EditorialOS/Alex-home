@@ -35,7 +35,7 @@ failure_modes:
   - trigger: "Test environment did not start"
     symptom: "The error says the test environment could not start"
     conductor_action: "Retry once after 2 minutes."
-    on: error
+    when: error
     match: ["environment could not start"]
     action: retry
     retries: 1

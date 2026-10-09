@@ -34,7 +34,7 @@ failure_modes:
   - trigger: "Role description missing"
     symptom: "The error says there is no role description"
     conductor_action: "Ask the hiring manager for the role description, then retry with it as the note."
-    on: error
+    when: error
     match: ["no role description"]
     action: needs-human
 ```

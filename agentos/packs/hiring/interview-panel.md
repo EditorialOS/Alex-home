@@ -33,7 +33,7 @@ failure_modes:
   - trigger: "No one passed"
     symptom: "The panel reports an error saying 'no pick'"
     conductor_action: "Stop this loop. The hiring manager decides whether to reopen screening."
-    on: error
+    when: error
     match: ["no pick"]
     action: fail
 ```

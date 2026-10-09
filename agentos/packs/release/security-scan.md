@@ -46,7 +46,7 @@ failure_modes:
   - trigger: "Vulnerability database out of date"
     symptom: "The scan stops with 'database out of date'"
     conductor_action: "Update the vulnerability database, then scan again."
-    on: error
+    when: error
     match: ["database out of date"]
     action: run_first
     run_first: {agent_id: security-scan, capability: update-database}
