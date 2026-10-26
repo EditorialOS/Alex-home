@@ -65,7 +65,13 @@ test('when the model is down the next one on the plug answers, and the record sa
     models: scriptedModels((request) => (request.model === 'opus' ? Promise.reject(new Error('overloaded')) : { text: 'ok', model: 'sonnet', cost_usd: 0.1 })),
   });
   const mission = await conductor.start('contract-reviewer', 'review', { user: legal });
-  assert.deepEqual([mission.nodes.root!.runs[0]!.model, mission.nodes.root!.runs[0]!.plug], ['sonnet', 'fallback']);
+  assert.deepEqual(
+    mission.nodes.root!.runs.map((run) => [run.model, run.plug, run.outcome]),
+    [['opus', 'model', 'error'], ['sonnet', 'fallback', 'ok']],
+  );
+  const report = await conductor.usage();
+  assert.deepEqual([report.agents[0]!.runs, report.agents[0]!.failed], [1, 1]);
+  assert.deepEqual(report.agents[0]!.models, { opus: 1, 'sonnet (fallback)': 1 });
   assert.ok(mission.nodes.root!.events.some((event) => event.includes('opus failed (overloaded); trying the next model')));
 });
 

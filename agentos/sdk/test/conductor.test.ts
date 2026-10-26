@@ -180,7 +180,7 @@ test('a model card falls back to the next model on its plug', async () => {
   );
   const mission = await conductor.start('crew', 'go');
   assert.equal(mission.nodes['task-1']!.output, 'from small');
-  assert.equal(mission.nodes['task-1']!.runs[0]!.model, 'small');
+  assert.deepEqual(mission.nodes['task-1']!.runs.map((run) => [run.model, run.outcome]), [['big', 'error'], ['small', 'ok']]);
 });
 
 test('a human card waits for a person and records who did it', async () => {

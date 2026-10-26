@@ -2,7 +2,7 @@
 
 A small conductor for teams of agents. You describe each agent in a plain-text card. You put cards in folders: a folder is a team. The conductor turns a request into a tree of tasks, hands each task to the right card, enforces the rules written on the cards, and keeps the record. It never does the work itself.
 
-**Status: v0.1, unpublished.** It is tested offline (40 tests) and against a local stand-in for the Claude API. It has not yet run against the live Claude API.
+**Status: v0.1, unpublished.** It is tested offline (41 tests) and against a local stand-in for the Claude API. It has not yet run against the live Claude API.
 
 ## Try it
 
@@ -17,6 +17,10 @@ node src/cli.ts check --dir examples/media/agents
 
 # The whole flow in one process. Offline unless ANTHROPIC_API_KEY is set.
 AGENTOS_OFFLINE=1 node examples/media/run.ts
+
+# A simulated month at a made-up podcast network: 15 requests through the real
+# conductor, with model replies written in advance. Writes examples/case-study/run-log.md.
+node examples/case-study/simulate.ts
 ```
 
 The same flow from the command line, one step at a time. Each command is its own process, so the approval can come days later:

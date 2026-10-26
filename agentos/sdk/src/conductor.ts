@@ -116,6 +116,8 @@ export class TimeoutError extends Error {
 }
 
 const TERMINAL: NodeStatus[] = ['complete', 'failed', 'blocked', 'cancelled'];
+/** Errors whose failed call is already in the run record (a model attempt records its own). */
+const RECORDED = new WeakSet<object>();
 const OUTPUT_LIMIT = 20_000;
 const CHECK_SCHEMA = {
   type: 'object',
@@ -410,7 +412,7 @@ export class Conductor {
       return this.handleFailure(mission, node, kindOf(error), messageOf(error));
     }
     const chosen = card.capabilities.find((c) => c.id === result.capability);
-    const why = result.reason ? ` (${result.reason})` : '';
+    const why = result.reason ? ` (${result.reason.replace(/\.$/, '')})` : '';
     if (!chosen) {
       return this.needsHuman(node, 'fix', `No capability fits this request${why}. Retry with a note, retry naming a capability (${choices}), or fail it.`);
     }
@@ -569,24 +571,28 @@ export class Conductor {
       const result = await withTimeout(plug(task), timeoutMs, card.id);
       return typeof result === 'string' ? { output: result } : result;
     }
-    return this.callModel(node, card, message, undefined, timeoutMs, downgrade);
+    return this.callModel(mission, node, card, capability.id, message, undefined, timeoutMs, downgrade);
   }
 
-  /** Tries the card's model (or its downgrade), then each fallback in order. */
+  /** Tries the card's model (or its downgrade), then each fallback in order. Every failed attempt is recorded. */
   private async callModel(
+    mission: Mission,
     node: MissionNode,
     card: Card,
+    capability: string,
     prompt: string,
     schema: Record<string, unknown> | undefined,
     timeoutMs: number,
     downgrade: boolean,
-  ): Promise<PlugResult> {
+  ): Promise<PlugResult & { started: number }> {
     if (!this.models) throw new Error('no model provider is configured');
     const plug = card.plug!;
     const first = downgrade && plug.downgrade ? plug.downgrade : plug.model;
     const models = [first, ...(plug.fallback ?? []).filter((model) => model !== first)];
     let lastError: unknown;
     for (const [index, model] of models.entries()) {
+      const started = this.now().getTime();
+      const choice = index > 0 ? 'fallback' : first === plug.model ? 'model' : 'downgrade';
       try {
         const response = await withTimeout(
           this.models.complete({
@@ -600,10 +606,11 @@ export class Conductor {
           timeoutMs,
           card.id,
         );
-        const choice = index > 0 ? 'fallback' : first === plug.model ? 'model' : 'downgrade';
-        return { output: response.text, cost_usd: response.cost_usd, model: response.model, plug: choice };
+        return { output: response.text, cost_usd: response.cost_usd, model: response.model, plug: choice, started };
       } catch (error) {
         lastError = error;
+        this.chargeRun(mission, node, card, capability, { model, plug: choice }, started, kindOf(error));
+        if (typeof error === 'object' && error !== null) RECORDED.add(error);
         if (model !== models.at(-1)) this.event(node, `${model} failed (${messageOf(error)}); trying the next model`);
       }
     }
@@ -611,7 +618,7 @@ export class Conductor {
   }
 
   /** Calls an agent and records the run, whether it succeeds or not. */
-  private async timed<T extends { cost_usd?: number; model?: string; plug?: PlugChoice }>(
+  private async timed<T extends { cost_usd?: number; model?: string; plug?: PlugChoice; started?: number }>(
     mission: Mission,
     node: MissionNode,
     card: Card,
@@ -621,10 +628,12 @@ export class Conductor {
     const started = this.now().getTime();
     try {
       const result = await call();
-      this.chargeRun(mission, node, card, capability, result, started, 'ok');
+      // A model call that fell back reports when its answering attempt began.
+      this.chargeRun(mission, node, card, capability, result, result.started ?? started, 'ok');
       return result;
     } catch (error) {
-      this.chargeRun(mission, node, card, capability, {}, started, kindOf(error));
+      const recorded = typeof error === 'object' && error !== null && RECORDED.has(error);
+      if (!recorded) this.chargeRun(mission, node, card, capability, {}, started, kindOf(error));
       throw error;
     }
   }
@@ -704,7 +713,9 @@ export class Conductor {
     const message = checkMessage(mission, node, rule, capability);
     const timeoutMs = (checker.constraints.max_runtime_minutes ?? 10) * 60_000;
     const result = await this.timed(mission, node, checker, capability.id, async (): Promise<PlugResult> => {
-      if (checker.runtime !== 'function') return this.callModel(node, checker, message, CHECK_SCHEMA, timeoutMs, gate.downgrade !== undefined);
+      if (checker.runtime !== 'function') {
+        return this.callModel(mission, node, checker, capability.id, message, CHECK_SCHEMA, timeoutMs, gate.downgrade !== undefined);
+      }
       const plug = this.plugs[checker.id];
       if (!plug) throw new Error(`no plug is registered for \`${checker.id}\``);
       const raw = await withTimeout(plug({ mission, node, card: checker, capability, message }), timeoutMs, checker.id);
