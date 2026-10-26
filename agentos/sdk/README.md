@@ -2,7 +2,7 @@
 
 A small conductor for teams of agents. You describe each agent in a plain-text card. You put cards in folders: a folder is a team. The conductor turns a request into a tree of tasks, hands each task to the right card, enforces the rules written on the cards, and keeps the record. It never does the work itself.
 
-**Status: v0.1, unpublished.** It is tested offline (41 tests) and against a local stand-in for the Claude API. It has not yet run against the live Claude API.
+**Status: v0.1, unpublished.** 42 tests pass, offline and against a local stand-in for the Claude API. On its first live run on Claude (26 October 2026), the media example stopped at the script: the scriptwriter and the editor had not been given the research. That is fixed and covered by a test; the live rerun is still to do.
 
 ## Try it
 
@@ -39,6 +39,8 @@ node src/cli.ts run researcher "What do cheap headphones get wrong about bass?" 
 ```
 
 With `ANTHROPIC_API_KEY` set and `AGENTOS_OFFLINE` unset, every model card runs on Claude.
+
+Missions are saved in `.agentos/missions`, so every draft and every checker's note can be read afterwards with `output` or `status --json`. The command's exit code says where a mission stands: 0 done, 1 failed, 2 a mistake in the command, 3 waiting for a person. `examples/media/run.ts` exits the same way.
 
 ## The example team
 
@@ -169,7 +171,7 @@ Failed calls are recorded too, but only calls that succeed count toward `max_run
 - A mission is a tree of tasks, saved after every step. `FileStore` keeps one JSON file per mission.
 - **Routing:** the request names a capability, or its first word matches a signal, or the conductor's model picks one. If none fits, a person is asked.
 - **Planning:** a recipe if the capability has steps. Otherwise the model plans, using only the team's cards. Every plan, recipe or model, passes the same checks: the cards are on the team, the capabilities exist, there are no loops, the depth limit (4) and task limit (40) hold, and the `before` rules are met. A bad model plan is sent back once with the reasons, then a person is asked.
-- **Each task** gets the request, its inputs, and the outputs of the tasks it depends on. It does not see the whole history.
+- **Each task** gets the request, its inputs, and the output of every task upstream of it: a script that follows an outline also gets the research. A checker gets everything the task it checks was given, then that task's output.
 - **Finishing:** checks first, then approvals. An approval is bound to the output's hash, so a changed output must be approved again.
 - **Cost:** each call is charged to its task and the mission. Calls to Claude are streamed, and priced from the reply's token usage. The mission budget and the cards' monthly limits are checked before each task starts.
 - **Irreversible** capabilities are never retried automatically, and cannot also need an approval, because the approval would come after the act.

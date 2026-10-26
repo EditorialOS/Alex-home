@@ -958,21 +958,35 @@ export function taskMessage(mission: Mission, node: MissionNode, capability: Cap
   return lines.join('\n').trimEnd();
 }
 
-/** A node gets its dependencies' outputs; a team's first tasks get what the team received. */
+/**
+ * Every finished output upstream of a node: the tasks it waits on, directly or
+ * through others, at any level. A scriptwriter after an outline still gets the
+ * research before it. A team's output stands for its own tasks, so nothing
+ * arrives twice.
+ */
 function receivedOutputs(mission: Mission, node: MissionNode): MissionNode[] {
-  if (node.depends_on.length) return node.depends_on.map((id) => mission.nodes[id]!).filter((other) => other.output !== undefined);
-  const parent = node.parent ? mission.nodes[node.parent] : undefined;
-  return parent ? receivedOutputs(mission, parent) : [];
+  const upstream = new Set(upstreamNodes(mission, node).map((other) => other.id));
+  return Object.values(mission.nodes).filter(
+    (other) => upstream.has(other.id) && other.output !== undefined && !(other.parent && upstream.has(other.parent)),
+  );
 }
 
+/** What a checker receives: the rule, everything the checked task was given, then its output. */
 function checkMessage(mission: Mission, node: MissionNode, rule: CheckRule, capability: Capability): string {
   const scale = capability.score_scale ?? '0-100';
+  const given = receivedOutputs(mission, node);
   return [
     'Check the output below against this rule.',
     `Rule: ${rule.reason}`,
     `It was meant to be: ${node.description}`,
     `Request: ${mission.request}`,
     '',
+    ...(given.length
+      ? [
+          `## What ${node.agent} was given`,
+          ...given.flatMap((other) => [`### ${other.id}: ${other.description}`, truncate(other.output ?? '', mission.id, other.id), '']),
+        ]
+      : []),
     `## Output to check (${node.id}: ${node.agent}/${node.capability})`,
     node.output ?? '',
     '',

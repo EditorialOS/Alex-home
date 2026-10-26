@@ -37,7 +37,13 @@ function noteFor(mission: Mission, node: MissionNode): string[] | undefined {
     return [`a person does this task, then: agentos resolve ${mission.id} ${node.id} --decision complete --output-file <file> --by <name>`];
   }
   if (node.status === 'needs-human' || node.status === 'failed') {
-    return node.error ? [node.error] : undefined;
+    const lines = node.error ? [node.error] : [];
+    // A check that stopped the work: show what the checker said, in full.
+    const check = node.checks.at(-1);
+    if (check && check.verdict !== 'pass' && check.notes) {
+      lines.push(`${check.checker}'s notes${check.score === undefined ? '' : ` (score ${check.score})`}:`, ...check.notes.split('\n').map((line) => `  ${line}`));
+    }
+    return lines.length ? lines : undefined;
   }
   return undefined;
 }

@@ -330,3 +330,39 @@ test('gates: see every call, can stop one or change its model, and get every rec
   assert.equal(mission.nodes['task-3']!.error, 'not today');
   assert.equal(records.length, 2);
 });
+
+test('a task gets every output upstream of it, and its checker sees what it saw', async () => {
+  const messages: Record<string, string[]> = {};
+  const conductor = setup(
+    [
+      team('show', ['research', 'writers', 'publish'], [['research', 'work'], ['writers', 'run'], ['publish', 'work']]),
+      team('writers', ['outline', 'draft', 'editor'], [['outline', 'work'], ['draft', 'work']], {
+        rules: [{ id: 'edit', kind: 'check', applies_to: { agent_id: 'draft' }, checker: { agent_id: 'editor', capability: 'score' }, reason: 'facts match the research' }],
+      }),
+      worker('research'),
+      worker('outline'),
+      worker('draft'),
+      worker('publish'),
+      worker('editor', 'score'),
+    ],
+    {
+      plugs: {
+        ...echoPlugs(['research', 'outline', 'draft', 'publish'], messages),
+        editor: async (task) => {
+          (messages.editor ??= []).push(task.message);
+          return JSON.stringify({ verdict: 'pass', score: 100, notes: 'ok' });
+        },
+      },
+    },
+  );
+  const mission = await conductor.start('show', 'an episode');
+  assert.equal(mission.status, 'complete');
+  // The draft sees the research, not only the outline right before it.
+  assert.match(messages.draft![0]!, /### task-1: [\s\S]*research done/);
+  assert.match(messages.draft![0]!, /### task-2\.1: [\s\S]*outline done/);
+  // The checker sees what the draft saw, then the draft itself.
+  assert.match(messages.editor![0]!, /research done[\s\S]*outline done[\s\S]*## Output to check[\s\S]*draft done/);
+  // A later task gets a team's output once, not again task by task.
+  assert.match(messages.publish![0]!, /### task-1: [\s\S]*### task-2: /);
+  assert.doesNotMatch(messages.publish![0]!, /### task-2\.1/);
+});

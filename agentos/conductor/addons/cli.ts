@@ -42,6 +42,9 @@ Every command takes:
   --store <folder>   where missions are kept (default ./.agentos/missions)
 
 Model cards run on Claude with $ANTHROPIC_API_KEY unless the setup module exports models.
+
+Exit codes: 0 done (or cancelled), 1 failed or an error, 2 a mistake in the command,
+3 the mission is waiting for a person.
 The switch add-on is on unless the setup module exports its own gates.`;
 
 const OPTIONS = {
@@ -208,10 +211,13 @@ async function loadSetup(path: string | undefined): Promise<Setup> {
   return { plugs: module.plugs ?? module.default, models: module.models, planner: module.planner };
 }
 
+/** Prints a mission. The exit code says where it stands: 0 done, 1 failed, 3 waiting for a person. */
 function report(mission: Mission): number {
   console.log(formatMission(mission));
   if (mission.status === 'complete') console.log(`\nThe output: conductor output ${mission.id}`);
-  return mission.status === 'failed' ? 1 : 0;
+  if (mission.status === 'needs-human') console.log('\nWaiting for a person (exit code 3).');
+  if (mission.status === 'failed') return 1;
+  return mission.status === 'needs-human' ? 3 : 0;
 }
 
 function budget(text: string): number {

@@ -391,9 +391,10 @@ Context files: <the card's context_files>
 ```
 
 `Inputs` are the request's named values (§13). The rest:
-1. A node receives the outputs of its own `depends_on` nodes, and no others.
-2. A conductor's first children (those that depend on no sibling) also receive the outputs the conductor itself received, so outputs cross levels.
-3. Each earlier output is cut at 20,000 characters, with the marker `[truncated: full output in <mission_id>/<node_id>]`. The full output stays in the mission file.
+1. A node receives the output of every node upstream of it, at every level: its `depends_on` nodes, the nodes those depend on, and what its conductor received. A script that depends on an outline also receives the research the outline used.
+2. A conductor's output stands for its children's, so a node that depends on a team receives that team's output once.
+3. A checker (§10) receives everything the checked node received, then the output it checks, so it can check facts against the same sources.
+4. Each earlier output is cut at 20,000 characters, with the marker `[truncated: full output in <mission_id>/<node_id>]`. The full output stays in the mission file.
 
 Every node returns its output and a short summary (a JSON output's `summary` field, or its first 300 characters). A conductor's output is its children's outputs, labelled, in order; its summary is Claude's synthesis of theirs.
 

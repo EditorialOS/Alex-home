@@ -4,7 +4,7 @@ The conductor runs agents written as plain-text cards. Give it a folder of cards
 
 It does not do the work, call models, set limits or host anything. Those plug in.
 
-**Status: v0.1, unpublished.** 36 tests pass, offline and against a stand-in for the Claude API. It has not yet run on live Claude.
+**Status: v0.1, unpublished.** 37 tests pass, offline and against a stand-in for the Claude API. The hello example has run on live Claude and finished (26 October 2026).
 
 ## Try it
 
@@ -109,7 +109,7 @@ const noWeekends: Gate = {
 | `@agentos/conductor/switch` | A gate for a card's `switch:` block: on or off, who may use it, monthly runs and spend, a cheaper model past a spend line, and a budget per mission. |
 | `@agentos/conductor/usage` | Who used which card, on which model, for how much, read from the records. |
 | `@agentos/conductor/models` | `routeModels` (several providers by name prefix) and `scriptedModels` (canned answers, for tests and dry runs). |
-| `conductor` command | check, run, status, output, list, usage, approve, reject, resolve, advance and cancel. It plugs in Claude, the planner and the switch by default. |
+| `conductor` command | check, run, status, output, list, usage, approve, reject, resolve, advance and cancel. It plugs in Claude, the planner and the switch by default. Exit codes: 0 done, 1 failed, 2 a mistake in the command, 3 waiting for a person. |
 
 ## Relation to the AgentOS SDK
 
