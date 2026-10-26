@@ -1,5 +1,6 @@
 // Northlight Audio, a made-up four-person podcast network: one simulated
-// month on the show team in examples/media.
+// month on its team of cards in ./agents (the media example's show team,
+// with Northlight's own script limits).
 //
 // The conductor, the cards, their rules and their switches are the real ones,
 // and every route, check, sign-off, block and retry comes out of the engine.
@@ -288,10 +289,7 @@ export interface Simulation {
 }
 
 export async function simulate(): Promise<Simulation> {
-  const registry = await loadAgents(fileURLToPath(new URL('../media/agents', import.meta.url)));
-  // Northlight's own settings on top of the example cards. Maya set the
-  // script line low on purpose, to see the downgrade work in the first month.
-  registry.get('scriptwriter')!.switch = { downgrade_after_usd: 1.5, max_usd_per_month: 3 };
+  const registry = await loadAgents(fileURLToPath(new URL('./agents', import.meta.url)));
 
   const models = scriptedModels(answer);
   const conductor = new Conductor({ registry, store: new MemoryStore(), plugs, models, planner: new ModelPlanner({ models }), now });
@@ -393,7 +391,7 @@ function runLog({ missions, usage, conductor }: Simulation): string {
   const lines = [
     '# Northlight Audio: one simulated month',
     '',
-    'Made up, and simulated: the conductor, cards, rules and switches are real (`examples/media/agents`, with the scriptwriter limits in `simulate.ts`), and every route, check, sign-off, block and retry below came out of the engine. The model replies were written in advance; their token counts, timing and cost are simulated, at Claude list prices. Regenerate with `node examples/case-study/simulate.ts`.',
+    'Made up, and simulated: the conductor, cards, rules and switches are real (`examples/case-study/agents`), and every route, check, sign-off, block and retry below came out of the engine. The model replies were written in advance; their token counts, timing and cost are simulated, at Claude list prices. Regenerate with `node examples/case-study/simulate.ts`.',
     '',
     '## Summary',
     '',

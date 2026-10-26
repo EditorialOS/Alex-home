@@ -1,6 +1,6 @@
 # Northlight Audio: one simulated month
 
-Made up, and simulated: the conductor, cards, rules and switches are real (`examples/media/agents`, with the scriptwriter limits in `simulate.ts`), and every route, check, sign-off, block and retry below came out of the engine. The model replies were written in advance; their token counts, timing and cost are simulated, at Claude list prices. Regenerate with `node examples/case-study/simulate.ts`.
+Made up, and simulated: the conductor, cards, rules and switches are real (`examples/case-study/agents`), and every route, check, sign-off, block and retry below came out of the engine. The model replies were written in advance; their token counts, timing and cost are simulated, at Claude list prices. Regenerate with `node examples/case-study/simulate.ts`.
 
 ## Summary
 
