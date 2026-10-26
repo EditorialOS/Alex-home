@@ -2,12 +2,13 @@
 
 AgentOS is a small operating system for agents: each agent is described by a plain-text card, and a tiny kernel turns every request into a tree of tasks, hands each task to the right card, enforces the rules written on the cards, and keeps a full record. It grows out of the v1 Conductor, which becomes the kernel, and adds sub-conductors: cards that do their job by handing pieces to other cards, so teams can nest without their parents knowing.
 
-**Status: draft.** This folder holds a specification and example cards only. No code exists yet, and everything here is open to review.
+**Status: draft.** This folder holds the specification, example cards, and a first SDK (`sdk/`) that runs the kernel's core. Everything here is open to review.
 
 ## What's in this folder
 
 | Path | What it is |
 |---|---|
+| `sdk/` | The SDK: the conductor as a TypeScript library and an `agentos` command, with an example media team. See `sdk/README.md` for what it runs and what it does not yet. |
 | `SPEC.md` | The specification: design rules, card format, runtimes, rules, API, and one mission walked end to end (§17). |
 | `packs/root.md` | The root conductor: the front door that sends each request to a pack. |
 | `packs/events/` | Event planning: `event-planner` (conductor, planned by Claude), `venue-finder` (A2A agent), `budget-checker` (checker), `invitation-sender`. |

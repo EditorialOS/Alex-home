@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // AgentOS has its own package, build and tests.
+    "agentos/**",
   ]),
 ]);
 
