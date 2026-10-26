@@ -1,0 +1,39 @@
+{
+  "name": "@agentos/conductor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs agents written as plain-text cards: routing, steps, rules and waits for people. Everything else plugs in.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/src/index.d.ts", "default": "./dist/src/index.js" },
+    "./claude": { "types": "./dist/addons/claude.d.ts", "default": "./dist/addons/claude.js" },
+    "./planner": { "types": "./dist/addons/planner.d.ts", "default": "./dist/addons/planner.js" },
+    "./models": { "types": "./dist/addons/models.d.ts", "default": "./dist/addons/models.js" },
+    "./switch": { "types": "./dist/addons/switch.d.ts", "default": "./dist/addons/switch.js" },
+    "./usage": { "types": "./dist/addons/usage.d.ts", "default": "./dist/addons/usage.js" },
+    "./format": { "types": "./dist/addons/format.d.ts", "default": "./dist/addons/format.js" }
+  },
+  "bin": { "conductor": "dist/addons/cli.js" },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=20.19" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "node --test 'test/*.test.ts'"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": { "optional": true }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}
