@@ -196,6 +196,13 @@ export function validateCard(card: Card, errors: string[]): void {
   if (card.plug && card.runtime !== 'model' && card.runtime !== 'conductor') {
     errors.push(`a ${card.runtime} card cannot have a \`plug:\` block`);
   }
+  const downgradeAt = card.switch?.downgrade_after_usd !== undefined;
+  if (downgradeAt && (card.runtime !== 'model' || !card.plug?.downgrade)) {
+    errors.push('`switch.downgrade_after_usd` needs a model card whose plug names a `downgrade` model');
+  }
+  if (card.plug?.downgrade && !downgradeAt) {
+    errors.push('`plug.downgrade` is used only past `switch.downgrade_after_usd`; set both, or neither');
+  }
   for (const rule of card.rules) {
     if (card.runtime !== 'conductor' && rule.kind !== 'before' && rule.applies_to?.agent_id && rule.applies_to.agent_id !== card.id) {
       errors.push(`rule \`${rule.id}\`: a worker card's rules apply only to its own work`);
@@ -418,7 +425,7 @@ function readFailureModes(value: unknown, errors: string[]): FailureMode[] {
 
 function readSwitch(value: unknown, errors: string[]): Switch | undefined {
   if (value === undefined) return undefined;
-  if (!expectKeys(value, ['enabled', 'used_by', 'max_runs_per_month', 'max_usd_per_month'], 'switch', errors)) return undefined;
+  if (!expectKeys(value, ['enabled', 'used_by', 'max_runs_per_month', 'max_usd_per_month', 'downgrade_after_usd'], 'switch', errors)) return undefined;
   const result: Switch = {};
   if (value.enabled !== undefined) result.enabled = requireBoolean(value.enabled, 'switch.enabled', errors);
   if (value.used_by !== undefined) result.used_by = readStringList(value.used_by, 'switch.used_by', errors);
@@ -428,14 +435,18 @@ function readSwitch(value: unknown, errors: string[]): Switch | undefined {
   if (value.max_usd_per_month !== undefined) {
     result.max_usd_per_month = requireNumber(value.max_usd_per_month, 'switch.max_usd_per_month', errors);
   }
+  if (value.downgrade_after_usd !== undefined) {
+    result.downgrade_after_usd = requireNumber(value.downgrade_after_usd, 'switch.downgrade_after_usd', errors);
+  }
   return result;
 }
 
 function readPlug(value: unknown, errors: string[]): Plug | undefined {
   if (value === undefined) return undefined;
-  if (!expectKeys(value, ['model', 'fallback', 'effort', 'max_tokens'], 'plug', errors)) return undefined;
+  if (!expectKeys(value, ['model', 'fallback', 'downgrade', 'effort', 'max_tokens'], 'plug', errors)) return undefined;
   const plug: Plug = { model: requireString(value.model, 'plug.model', errors) };
   if (value.fallback !== undefined) plug.fallback = readStringList(value.fallback, 'plug.fallback', errors);
+  if (value.downgrade !== undefined) plug.downgrade = requireString(value.downgrade, 'plug.downgrade', errors);
   if (value.effort !== undefined) {
     plug.effort = oneOf(value.effort, ['low', 'medium', 'high', 'xhigh', 'max'] as const, 'plug.effort', errors);
   }

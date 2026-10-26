@@ -19,9 +19,25 @@ const server = createServer((request, response) => {
   let body = '';
   request.on('data', (chunk) => (body += chunk));
   request.on('end', () => {
-    seen.push({ body: JSON.parse(body), headers: request.headers });
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify(reply));
+    const parsed = JSON.parse(body);
+    seen.push({ body: parsed, headers: request.headers });
+    if (!parsed.stream) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify(reply));
+    }
+    // The same reply as server-sent events, the way the API streams it.
+    const { content, stop_reason, stop_details, usage, ...rest } = reply as { content: Record<string, unknown>[]; stop_reason: string; stop_details: unknown; usage: { output_tokens: number } };
+    const events: Record<string, unknown>[] = [{ type: 'message_start', message: { ...rest, content: [], stop_reason: null, stop_details: null, usage: { ...usage, output_tokens: 0 } } }];
+    content.forEach((block, index) => {
+      const { text, ...start } = block as { text?: string };
+      events.push({ type: 'content_block_start', index, content_block: text === undefined ? block : { ...start, text: '' } });
+      if (text !== undefined) events.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } });
+      events.push({ type: 'content_block_stop', index });
+    });
+    events.push({ type: 'message_delta', delta: { stop_reason, stop_sequence: null, stop_details }, usage: { output_tokens: usage.output_tokens } });
+    events.push({ type: 'message_stop' });
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.end(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
   });
 });
 
@@ -55,6 +71,7 @@ test('a model card becomes one Messages call with effort, caching and server fal
   const { body, headers } = seen.at(-1)!;
   assert.equal(body.model, 'claude-opus-5-5');
   assert.equal(body.max_tokens, 16000);
+  assert.equal(body.stream, true);
   assert.deepEqual(body.system, [{ type: 'text', text: 'You write.', cache_control: { type: 'ephemeral' } }]);
   assert.deepEqual(body.messages, [{ role: 'user', content: 'Write.' }]);
   assert.deepEqual(body.output_config, { effort: 'high' });

@@ -14,6 +14,7 @@ import { AnthropicModels } from './plugs/anthropic.ts';
 import { allowedFor, loadAgents } from './registry.ts';
 import type { Registry } from './registry.ts';
 import { FileStore } from './store.ts';
+import { formatUsage, monthOf } from './usage.ts';
 import type { FunctionPlug, Mission, ModelProvider, Planner } from './types.ts';
 
 const USAGE = `agentos: run teams of agents described in cards
@@ -24,6 +25,7 @@ const USAGE = `agentos: run teams of agents described in cards
   agentos status <mission> [--json]
   agentos output <mission> [<task>]           print what a mission (or one task) produced
   agentos list
+  agentos usage [--month YYYY-MM]             who used which agent, on which model, for how much
   agentos approve <mission> <task> --hash <output hash> [--by <name>] [--note <text>]
   agentos reject  <mission> <task> --note <why> [--by <name>]
   agentos resolve <mission> <task> --decision complete|error|retry|fail
@@ -56,6 +58,7 @@ const OPTIONS = {
   note: { type: 'string' },
   decision: { type: 'string' },
   error: { type: 'string' },
+  month: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 } as const;
 
@@ -128,6 +131,12 @@ async function main(argv: string[]): Promise<number> {
       for (const mission of await conductor.list()) {
         console.log(`${mission.id}  ${mission.status.padEnd(11)}  $${mission.cost_usd.toFixed(4)}  ${mission.request.slice(0, 70)}`);
       }
+      return 0;
+    }
+    case 'usage': {
+      if (values.month && !/^\d{4}-\d{2}$/.test(values.month)) throw new UsageError(`--month is YYYY-MM, not \`${values.month}\``);
+      const { since, until } = monthOf(new Date(), values.month);
+      console.log(formatUsage(await conductor.usage({ since, until }), registry));
       return 0;
     }
     case 'approve':

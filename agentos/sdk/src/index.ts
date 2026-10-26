@@ -15,5 +15,7 @@ export { routeModels, scriptedModels } from './models.ts';
 export { AnthropicModels, costOf } from './plugs/anthropic.ts';
 export type { AnthropicModelsOptions } from './plugs/anthropic.ts';
 export { formatMission } from './format.ts';
+export { formatUsage, monthOf, usageReport } from './usage.ts';
+export type { AgentUsage, UsageReport } from './usage.ts';
 export { RefusalError, RUNTIMES } from './types.ts';
 export type * from './types.ts';

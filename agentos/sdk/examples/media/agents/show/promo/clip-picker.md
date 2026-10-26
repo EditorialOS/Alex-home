@@ -12,7 +12,7 @@
 plug:
   model: claude-haiku-5-5
   effort: low
-  max_tokens: 2000
+  max_tokens: 4000
 ```
 
 ## Capabilities

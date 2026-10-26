@@ -21,6 +21,8 @@ import {
   upstreamNodes,
 } from './rules.ts';
 import { MemoryStore } from './store.ts';
+import { monthOf, usageReport } from './usage.ts';
+import type { UsageReport } from './usage.ts';
 import { RefusalError } from './types.ts';
 import type {
   BeforeRule,
@@ -37,7 +39,9 @@ import type {
   ModelProvider,
   NodeStatus,
   Planner,
+  PlugChoice,
   PlugResult,
+  RunOutcome,
   Selector,
   Step,
   Task,
@@ -247,7 +251,10 @@ export class Conductor {
     if (input.decision === 'complete') {
       if (input.output === undefined) throw new Error('`complete` needs an output');
       const card = this.registry.get(node.agent);
-      if (card?.runtime === 'human' && node.children.length === 0) this.chargeRun(mission, node, card, { output: input.output });
+      if (card?.runtime === 'human' && node.children.length === 0) {
+        const started = node.started_at ? Date.parse(node.started_at) : this.now().getTime();
+        this.chargeRun(mission, node, card, node.capability, {}, started, 'ok', input.by);
+      }
       node.status = 'running';
       await this.finish(mission, node, input.output);
     } else if (input.decision === 'error') {
@@ -291,6 +298,12 @@ export class Conductor {
 
   async list(): Promise<Mission[]> {
     return this.store.list();
+  }
+
+  /** Who used which agent, on which model, for how much. Default: this month so far. */
+  async usage(range: { since?: Date; until?: Date } = {}): Promise<UsageReport> {
+    const month = monthOf(this.now());
+    return usageReport(await this.store.list(), range.since ?? month.since, range.until ?? month.until);
   }
 
   // ------------------------------------------------------------ the loop
@@ -347,8 +360,8 @@ export class Conductor {
     node.error = undefined;
     node.not_before = undefined;
 
-    const switchedOff = await this.switchBlocks(mission, card);
-    if (switchedOff) return this.needsHuman(node, 'fix', switchedOff);
+    const gate = await this.checkSwitch(mission, card);
+    if (gate.blocked) return this.needsHuman(node, 'fix', gate.blocked);
     const estimate = card.constraints.cost_per_run_usd ?? 0;
     if (mission.cost_usd + estimate > mission.budget_usd) {
       return this.fail(node, `budget_exceeded: $${mission.cost_usd.toFixed(2)} spent of $${mission.budget_usd.toFixed(2)}`);
@@ -361,13 +374,14 @@ export class Conductor {
       node.instructions = taskMessage(mission, node, capability);
       return this.needsHuman(node, 'task', `waiting for a person: ${card.name}`);
     }
+    if (gate.downgrade) this.event(node, gate.downgrade);
     let result: PlugResult;
     try {
-      result = await this.callWorker(mission, node, card, capability, taskMessage(mission, node, capability));
+      const message = taskMessage(mission, node, capability);
+      result = await this.timed(mission, node, card, capability.id, () => this.callWorker(mission, node, card, capability, message, gate.downgrade !== undefined));
     } catch (error) {
       return this.handleFailure(mission, node, kindOf(error), messageOf(error));
     }
-    this.chargeRun(mission, node, card, result);
     await this.finish(mission, node, result.output);
   }
 
@@ -388,13 +402,13 @@ export class Conductor {
       return this.needsHuman(node, 'fix', `No signal matches and no router is configured. Retry naming a capability (${choices}).`);
     }
     node.status = 'running';
+    const router = this.planner;
     let result;
     try {
-      result = await this.planner.route({ mission, node, team: card, note: node.feedback });
+      result = await this.timed(mission, node, card, '(route)', () => router.route!({ mission, node, team: card, note: node.feedback }));
     } catch (error) {
       return this.handleFailure(mission, node, kindOf(error), messageOf(error));
     }
-    this.chargeRun(mission, node, card, { output: '', cost_usd: result.cost_usd, model: result.model });
     const chosen = card.capabilities.find((c) => c.id === result.capability);
     const why = result.reason ? ` (${result.reason})` : '';
     if (!chosen) {
@@ -424,10 +438,11 @@ export class Conductor {
       source = 'planner';
       const planner = this.planner;
       const plan = async (violations: string[]): Promise<Step[]> => {
-        const result = await planner.plan({ mission, node, team, capability, allowed, violations });
-        const { steps: planned, ...cost } = Array.isArray(result) ? { steps: result } : result;
-        this.chargeRun(mission, node, team, { output: '', ...cost });
-        return planned;
+        const result = await this.timed(mission, node, team, capability.id, async () => {
+          const planned = await planner.plan({ mission, node, team, capability, allowed, violations });
+          return Array.isArray(planned) ? { steps: planned } : planned;
+        });
+        return result.steps;
       };
       try {
         steps = await plan([]);
@@ -538,7 +553,14 @@ export class Conductor {
 
   // ------------------------------------------------------------ workers
 
-  private async callWorker(mission: Mission, node: MissionNode, card: Card, capability: Capability, message: string): Promise<PlugResult> {
+  private async callWorker(
+    mission: Mission,
+    node: MissionNode,
+    card: Card,
+    capability: Capability,
+    message: string,
+    downgrade: boolean,
+  ): Promise<PlugResult> {
     const timeoutMs = (card.constraints.max_runtime_minutes ?? 10) * 60_000;
     if (card.runtime === 'function') {
       const plug = this.plugs[card.id];
@@ -547,22 +569,24 @@ export class Conductor {
       const result = await withTimeout(plug(task), timeoutMs, card.id);
       return typeof result === 'string' ? { output: result } : result;
     }
-    return this.callModel(node, card, message, undefined, timeoutMs);
+    return this.callModel(node, card, message, undefined, timeoutMs, downgrade);
   }
 
-  /** Tries the card's model, then each fallback in order. */
+  /** Tries the card's model (or its downgrade), then each fallback in order. */
   private async callModel(
     node: MissionNode,
     card: Card,
     prompt: string,
     schema: Record<string, unknown> | undefined,
     timeoutMs: number,
+    downgrade: boolean,
   ): Promise<PlugResult> {
     if (!this.models) throw new Error('no model provider is configured');
     const plug = card.plug!;
-    const models = [plug.model, ...(plug.fallback ?? [])];
+    const first = downgrade && plug.downgrade ? plug.downgrade : plug.model;
+    const models = [first, ...(plug.fallback ?? []).filter((model) => model !== first)];
     let lastError: unknown;
-    for (const model of models) {
+    for (const [index, model] of models.entries()) {
       try {
         const response = await withTimeout(
           this.models.complete({
@@ -576,7 +600,8 @@ export class Conductor {
           timeoutMs,
           card.id,
         );
-        return { output: response.text, cost_usd: response.cost_usd, model: response.model };
+        const choice = index > 0 ? 'fallback' : first === plug.model ? 'model' : 'downgrade';
+        return { output: response.text, cost_usd: response.cost_usd, model: response.model, plug: choice };
       } catch (error) {
         lastError = error;
         if (model !== models.at(-1)) this.event(node, `${model} failed (${messageOf(error)}); trying the next model`);
@@ -585,12 +610,44 @@ export class Conductor {
     throw lastError;
   }
 
-  private chargeRun(mission: Mission, node: MissionNode, card: Card, result: PlugResult): void {
-    const usd = result.cost_usd ?? card.constraints.cost_per_run_usd ?? 0;
-    node.runs.push({ agent: card.id, at: this.stamp(), usd, model: result.model, user: mission.user?.id });
+  /** Calls an agent and records the run, whether it succeeds or not. */
+  private async timed<T extends { cost_usd?: number; model?: string; plug?: PlugChoice }>(
+    mission: Mission,
+    node: MissionNode,
+    card: Card,
+    capability: string,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    const started = this.now().getTime();
+    try {
+      const result = await call();
+      this.chargeRun(mission, node, card, capability, result, started, 'ok');
+      return result;
+    } catch (error) {
+      this.chargeRun(mission, node, card, capability, {}, started, kindOf(error));
+      throw error;
+    }
+  }
+
+  private chargeRun(
+    mission: Mission,
+    node: MissionNode,
+    card: Card,
+    capability: string,
+    result: { cost_usd?: number; model?: string; plug?: PlugChoice },
+    started: number,
+    outcome: RunOutcome,
+    by?: string,
+  ): void {
+    const estimate = outcome === 'ok' ? card.constraints.cost_per_run_usd : undefined;
+    const usd = result.cost_usd ?? estimate ?? 0;
+    const ms = Math.max(0, this.now().getTime() - started);
+    node.runs.push({ agent: card.id, capability, at: this.stamp(), ms, usd, outcome, model: result.model, plug: result.plug, user: mission.user?.id, by });
     node.cost_usd += usd;
     mission.cost_usd += usd;
-    this.event(node, `ran ${card.id}${result.model ? ` on ${result.model}` : ''} ($${usd.toFixed(4)})`);
+    const on = result.model ? ` on ${result.model}${result.plug && result.plug !== 'model' ? ` (${result.plug})` : ''}` : '';
+    const ended = outcome === 'ok' ? 'ran' : `${outcome} from`;
+    this.event(node, `${ended} ${card.id}${on} ($${usd.toFixed(4)}, ${(ms / 1000).toFixed(1)}s)`);
   }
 
   // ------------------------------------------------------------ finishing
@@ -641,20 +698,18 @@ export class Conductor {
     const checker = this.registry.get(rule.checker.agent_id);
     const capability = checker?.capabilities.find((c) => c.id === rule.checker.capability);
     if (!checker || !capability) throw new Error(`checker \`${rule.checker.agent_id}\` is missing or invalid`);
-    const switchedOff = await this.switchBlocks(mission, checker);
-    if (switchedOff) throw new Error(switchedOff);
+    const gate = await this.checkSwitch(mission, checker);
+    if (gate.blocked) throw new Error(gate.blocked);
+    if (gate.downgrade) this.event(node, gate.downgrade);
     const message = checkMessage(mission, node, rule, capability);
     const timeoutMs = (checker.constraints.max_runtime_minutes ?? 10) * 60_000;
-    let result: PlugResult;
-    if (checker.runtime === 'function') {
+    const result = await this.timed(mission, node, checker, capability.id, async (): Promise<PlugResult> => {
+      if (checker.runtime !== 'function') return this.callModel(node, checker, message, CHECK_SCHEMA, timeoutMs, gate.downgrade !== undefined);
       const plug = this.plugs[checker.id];
       if (!plug) throw new Error(`no plug is registered for \`${checker.id}\``);
       const raw = await withTimeout(plug({ mission, node, card: checker, capability, message }), timeoutMs, checker.id);
-      result = typeof raw === 'string' ? { output: raw } : raw;
-    } else {
-      result = await this.callModel(node, checker, message, CHECK_SCHEMA, timeoutMs);
-    }
-    this.chargeRun(mission, node, checker, result);
+      return typeof raw === 'string' ? { output: raw } : raw;
+    });
     const parsed = parseVerdict(result.output);
     const score = parsed.score === undefined ? undefined : normalizeScore(parsed.score, capability.score_scale);
     let verdict = parsed.verdict;
@@ -752,29 +807,35 @@ export class Conductor {
 
   // ------------------------------------------------------------ the switch
 
-  /** Why the card's switch stops this run, or undefined if it may run. */
-  private async switchBlocks(mission: Mission, card: Card): Promise<string | undefined> {
+  /**
+   * The card's switch, read before every call: is it on, may this caller use
+   * it, is it under its monthly limits. Past `downgrade_after_usd` it still
+   * runs, on its plug's cheaper model.
+   */
+  private async checkSwitch(mission: Mission, card: Card): Promise<{ blocked?: string; downgrade?: string }> {
     const toggle = card.switch;
-    if (!toggle) return undefined;
-    if (toggle.enabled === false) return `\`${card.id}\` is switched off`;
+    if (!toggle) return {};
+    if (toggle.enabled === false) return { blocked: `\`${card.id}\` is switched off` };
     if (toggle.used_by?.length) {
       const who = mission.user ? [mission.user.id, ...(mission.user.groups ?? [])] : [];
       if (!who.some((name) => toggle.used_by!.includes(name))) {
         const caller = mission.user ? `\`${mission.user.id}\`` : 'a caller with no name';
-        return `${caller} may not use \`${card.id}\` (used by: ${toggle.used_by.join(', ')})`;
+        return { blocked: `${caller} may not use \`${card.id}\` (used by: ${toggle.used_by.join(', ')})` };
       }
     }
-    if (toggle.max_runs_per_month !== undefined || toggle.max_usd_per_month !== undefined) {
-      const usage = await this.usageThisMonth(card.id, mission);
-      if (toggle.max_runs_per_month !== undefined && usage.runs >= toggle.max_runs_per_month) {
-        return `\`${card.id}\` has used all ${toggle.max_runs_per_month} of its runs this month`;
-      }
-      const next = card.constraints.cost_per_run_usd ?? 0;
-      if (toggle.max_usd_per_month !== undefined && usage.usd + next > toggle.max_usd_per_month) {
-        return `\`${card.id}\` would pass its $${toggle.max_usd_per_month} monthly budget ($${usage.usd.toFixed(2)} spent)`;
-      }
+    if (toggle.max_runs_per_month === undefined && toggle.max_usd_per_month === undefined && toggle.downgrade_after_usd === undefined) return {};
+    const usage = await this.usageThisMonth(card.id, mission);
+    if (toggle.max_runs_per_month !== undefined && usage.runs >= toggle.max_runs_per_month) {
+      return { blocked: `\`${card.id}\` has used all ${toggle.max_runs_per_month} of its runs this month` };
     }
-    return undefined;
+    const next = card.constraints.cost_per_run_usd ?? 0;
+    if (toggle.max_usd_per_month !== undefined && usage.usd + next > toggle.max_usd_per_month) {
+      return { blocked: `\`${card.id}\` would pass its $${toggle.max_usd_per_month} monthly budget ($${usage.usd.toFixed(2)} spent)` };
+    }
+    if (toggle.downgrade_after_usd !== undefined && usage.usd >= toggle.downgrade_after_usd) {
+      return { downgrade: `\`${card.id}\` is past $${toggle.downgrade_after_usd} this month ($${usage.usd.toFixed(2)} spent): using ${card.plug?.downgrade}` };
+    }
+    return {};
   }
 
   private async usageThisMonth(agent: string, current: Mission): Promise<{ runs: number; usd: number }> {
@@ -787,7 +848,7 @@ export class Conductor {
       for (const node of Object.values(mission.nodes)) {
         for (const run of node.runs) {
           if (run.agent === agent && run.at >= since) {
-            runs += 1;
+            if (run.outcome === 'ok') runs += 1;
             usd += run.usd;
           }
         }
@@ -1026,7 +1087,7 @@ function newMissionId(now: Date): string {
   return `m-${stamp}-${randomUUID().slice(0, 4)}`;
 }
 
-function kindOf(error: unknown): FailureKind {
+function kindOf(error: unknown): Exclude<FailureKind, 'rejected'> {
   if (error instanceof TimeoutError) return 'timeout';
   if (error instanceof RefusalError) return 'refusal';
   return 'error';

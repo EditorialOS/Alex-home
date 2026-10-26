@@ -5,7 +5,7 @@
 //   AGENTOS_OFFLINE=1 node examples/media/run.ts
 
 import { fileURLToPath } from 'node:url';
-import { AnthropicModels, Conductor, formatMission, loadAgents, MemoryStore, ModelPlanner } from '../../src/index.ts';
+import { AnthropicModels, Conductor, formatMission, formatUsage, loadAgents, MemoryStore, ModelPlanner } from '../../src/index.ts';
 import { models as offlineModels, plugs } from './setup.ts';
 
 const registry = await loadAgents(fileURLToPath(new URL('./agents', import.meta.url)));
@@ -22,6 +22,8 @@ console.log(formatMission(mission));
 
 const waiting = Object.values(mission.nodes).find((node) => node.status === 'needs-human' && node.waiting_for === 'approval');
 if (waiting) {
+  const draft = mission.nodes[waiting.children.at(-1) ?? waiting.id]!;
+  console.log(`\n----- the script (${draft.id}) -----\n${draft.output ?? ''}\n-----`);
   console.log(`\nThe host reads ${waiting.id} and approves ${waiting.output_hash}.\n`);
   mission = await conductor.approve(mission.id, waiting.id, { output_hash: waiting.output_hash!, by: 'sam', note: 'Recording Thursday.' });
   console.log(formatMission(mission));
@@ -31,3 +33,6 @@ if (mission.status === 'complete') {
   const release = Object.values(mission.nodes).find((node) => node.agent === 'publisher');
   console.log(`\n${release?.output ?? ''}`);
 }
+
+// The switchboard's record: every call, who asked, which model, what it cost.
+console.log(`\n${formatUsage(await conductor.usage(), registry)}`);

@@ -87,12 +87,17 @@ export interface Switch {
   used_by?: string[];
   max_runs_per_month?: number;
   max_usd_per_month?: number;
+  /** Past this much spend in a month, the card runs on its plug's `downgrade` model. */
+  downgrade_after_usd?: number;
 }
 
 /** What is plugged into a model card (or a conductor's planner). */
 export interface Plug {
   model: string;
+  /** Tried in order when the model fails (it is down, overloaded, or declines). */
   fallback?: string[];
+  /** The cheaper model used once the switch's `downgrade_after_usd` is passed. */
+  downgrade?: string;
   effort?: Effort;
   max_tokens?: number;
 }
@@ -163,13 +168,29 @@ export interface ApprovalRecord {
   at: string;
 }
 
-/** One call to an agent, kept for cost and for the switch's monthly limits. */
+export type RunOutcome = 'ok' | 'error' | 'timeout' | 'refusal';
+
+/** Which model on the plug answered: the card's own, a fallback, or the downgrade. */
+export type PlugChoice = 'model' | 'fallback' | 'downgrade';
+
+/**
+ * One call to an agent, failed calls included: who asked, which agent and
+ * plug, what it cost, how long it took, how it ended. The switch's monthly
+ * limits and `agentos usage` are read from these.
+ */
 export interface RunRecord {
   agent: string;
+  capability: string;
   at: string;
+  ms: number;
   usd: number;
+  outcome: RunOutcome;
   model?: string;
+  plug?: PlugChoice;
+  /** Who started the mission. */
   user?: string;
+  /** Human cards: the person who did the task. */
+  by?: string;
 }
 
 export interface MissionNode {
@@ -242,6 +263,7 @@ export interface PlugResult {
   output: string;
   cost_usd?: number;
   model?: string;
+  plug?: PlugChoice;
 }
 
 /** Code plugged into a `function` card. */

@@ -2,7 +2,7 @@
 
 A small conductor for teams of agents. You describe each agent in a plain-text card. You put cards in folders: a folder is a team. The conductor turns a request into a tree of tasks, hands each task to the right card, enforces the rules written on the cards, and keeps the record. It never does the work itself.
 
-**Status: v0.1, unpublished.** It is tested offline (35 tests) and against a local stand-in for the Claude API. It has not yet run against the live Claude API.
+**Status: v0.1, unpublished.** It is tested offline (40 tests) and against a local stand-in for the Claude API. It has not yet run against the live Claude API.
 
 ## Try it
 
@@ -28,6 +28,10 @@ node src/cli.ts run show "Episode 13: why your room matters more than your mic" 
 #     agentos approve m-20261026-… task-2 --hash sha256:… --by <name>
 node src/cli.ts approve m-20261026-… task-2 --hash sha256:… --by sam
 node src/cli.ts output m-20261026-…
+node src/cli.ts usage                       # who used which agent, on which model, for how much
+
+# Any card can be called on its own, not only a team:
+node src/cli.ts run researcher "What do cheap headphones get wrong about bass?" --user sam
 ```
 
 With `ANTHROPIC_API_KEY` set and `AGENTOS_OFFLINE` unset, every model card runs on Claude.
@@ -89,8 +93,8 @@ This is the v1 card format. Identity is in bold bullets. Everything else goes in
 |---|---|
 | `capabilities` | What the card can do. On a conductor, `steps` is a recipe. A conductor with no steps is planned by its model. `signals` are words such as `/promo` that pick a capability with no model call. |
 | `rules` | `approval` (a person signs off), `check` (another card scores the output, and a low score sends it back with notes), `before` (one card's work must come first). A rule on a conductor covers its whole subtree. |
-| `plug` | The model slot: `model`, `fallback`, `effort`, `max_tokens`. Swap the model here and nothing else changes. |
-| `switch` | Whether the card is on, who may use it (`used_by`), and monthly limits (`max_runs_per_month`, `max_usd_per_month`). |
+| `plug` | The model slot: `model`, `fallback` (tried in order if it fails), `downgrade` (the cheaper model past the switch's spend line), `effort`, `max_tokens`. Swap the model here and nothing else changes. |
+| `switch` | Whether the card is on, who may use it (`used_by`), its monthly limits (`max_runs_per_month`, `max_usd_per_month`), and the spend past which it runs on its plug's `downgrade` model (`downgrade_after_usd`). |
 | `failure_modes` | What happens on an `error`, `timeout`, `refusal` or `rejected`: `retry`, `revise`, `needs-human` or `fail`. |
 | `constraints`, `dependencies`, `routes_to` | As in v1. `autonomous: false`, `requires_human_approval` and `dependencies.required` become rules. |
 
@@ -124,6 +128,38 @@ await conductor.approve(mission.id, 'task-2', { output_hash, by: 'sam' });
 
 Other model providers plug in through `ModelProvider` (one method, `complete`). `routeModels({ anthropic, local })` sends `anthropic/…` and `local/…` model names to different providers. `scriptedModels(fn)` answers from your own function, for tests and dry runs.
 
+## The switchboard
+
+There is no separate switchboard service. Every call the conductor makes to a card goes through that card's switch and leaves a record:
+
+```
+caller (a person, an app, a team's conductor)
+   │  "run contract-reviewer on this NDA" + who's asking (--user ana --group legal)
+   ▼
+SWITCH   is it on? is legal in used_by? under max_runs_per_month? under max_usd_per_month?
+   │     pick the plug: model; downgrade once past downgrade_after_usd; fallback if the model fails
+   ▼
+AGENT    whatever is plugged in: a model, your code, a person
+   │
+   ▼
+RECORD   who asked, which agent and capability, which model and why, cost, time, outcome
+   ▼
+result goes back to the caller
+```
+
+```yaml
+plug:
+  model: claude-opus-5-5
+  fallback: [claude-sonnet-5-5]    # Opus is down: Sonnet answers
+  downgrade: claude-sonnet-5-5     # past $20 this month: Sonnet writes them
+switch:
+  used_by: [legal]
+  downgrade_after_usd: 20
+  max_usd_per_month: 40            # then it stops, and a person is asked
+```
+
+Failed calls are recorded too, but only calls that succeed count toward `max_runs_per_month`. `agentos usage` (or `conductor.usage()`) reads the records: runs, failures, spend, average time, the models used and why, by agent and by caller, next to each card's limits. Claude itself as a caller needs an MCP front door, which is not built yet.
+
 ## How a mission runs
 
 - A mission is a tree of tasks, saved after every step. `FileStore` keeps one JSON file per mission.
@@ -131,7 +167,7 @@ Other model providers plug in through `ModelProvider` (one method, `complete`). 
 - **Planning:** a recipe if the capability has steps. Otherwise the model plans, using only the team's cards. Every plan, recipe or model, passes the same checks: the cards are on the team, the capabilities exist, there are no loops, the depth limit (4) and task limit (40) hold, and the `before` rules are met. A bad model plan is sent back once with the reasons, then a person is asked.
 - **Each task** gets the request, its inputs, and the outputs of the tasks it depends on. It does not see the whole history.
 - **Finishing:** checks first, then approvals. An approval is bound to the output's hash, so a changed output must be approved again.
-- **Cost:** each call is charged to its task and the mission. Calls to Claude are priced from the reply's token usage. The mission budget and the cards' monthly limits are checked before each task starts.
+- **Cost:** each call is charged to its task and the mission. Calls to Claude are streamed, and priced from the reply's token usage. The mission budget and the cards' monthly limits are checked before each task starts.
 - **Irreversible** capabilities are never retried automatically, and cannot also need an approval, because the approval would come after the act.
 
 ## How this differs from SPEC v0.1
@@ -140,6 +176,8 @@ This SDK is the kernel from `../SPEC.md`, minus everything that needs a server o
 
 - the `mcp`, `a2a` and `queue` runtimes, `call:`, a per-capability `runtime`, `run_first`, `max_concurrent`
 - the HTTP API (§13), dry-run estimates (§12), and the track record (§15)
+- an MCP front door, so Claude (or any MCP client) can call cards as tools
+- limits per caller or per group: `used_by` says who may use a card, but its run and spend limits are shared by all callers
 - parallel tasks: one task runs at a time. A delayed retry waits in-process for up to 30 seconds, and anything longer waits until `agentos advance`
 - a team's summary is the first 300 characters of its output, not a model's synthesis
 - the planner is told to use few steps, but the spec's leaf bias (§9) is not enforced

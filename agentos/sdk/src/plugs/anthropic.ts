@@ -47,7 +47,9 @@ export class AnthropicModels implements ModelProvider {
     this.client ??= new Anthropic({ apiKey: this.options.apiKey, baseURL: this.options.baseURL });
     const model = request.model.replace(/^anthropic\//, '');
     const fallback = (this.options.serverFallbacks ?? true) && FALLBACK_MODELS.includes(model);
-    const response = await this.client.beta.messages.create({
+    // Streamed, so a card can ask for long replies without hitting the
+    // client's ten-minute limit on a single response; we keep the final message.
+    const stream = this.client.beta.messages.stream({
       model,
       max_tokens: request.max_tokens ?? this.options.maxTokens ?? 16_000,
       system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' } }],
@@ -58,6 +60,7 @@ export class AnthropicModels implements ModelProvider {
       },
       ...(fallback ? { betas: [FALLBACK_BETA], fallbacks: 'default' as const } : {}),
     });
+    const response = await stream.finalMessage();
     if (response.stop_reason === 'refusal') {
       const category = response.stop_details?.category ?? null;
       throw new RefusalError(`${response.model} declined the task${category ? ` (${category})` : ''}`, category);

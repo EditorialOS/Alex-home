@@ -12,7 +12,7 @@
 plug:
   model: claude-sonnet-5-5
   effort: low
-  max_tokens: 4000
+  max_tokens: 8000
 ```
 
 ## Capabilities
