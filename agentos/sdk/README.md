@@ -2,7 +2,7 @@
 
 A small conductor for teams of agents. You describe each agent in a plain-text card. You put cards in folders: a folder is a team. The conductor turns a request into a tree of tasks, hands each task to the right card, enforces the rules written on the cards, and keeps the record. It never does the work itself.
 
-**Status: v0.1, unpublished.** 42 tests pass, offline and against a local stand-in for the Claude API. On its first live run on Claude (26 October 2026), the media example stopped at the script: the scriptwriter and the editor had not been given the research. That is fixed and covered by a test; the live rerun is still to do.
+**Status: v0.1, unpublished.** 42 tests pass, offline and against a local stand-in for the Claude API. On its first live run on Claude (26 October 2026), the media example stopped at the script: the scriptwriter and the editor had not been given the research. With that fixed, the rerun the same day finished the whole episode: the editor passed the second draft (4.5 out of 5), and the run cost an estimated $0.38 in 190 seconds.
 
 ## Try it
 
