@@ -1,5 +1,5 @@
 // The Claude plug against a local stand-in for the Messages API: checks the
-// request AgentOS sends and how it reads replies. No API key or network needed.
+// request the conductor sends and how it reads replies. No API key or network needed.
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

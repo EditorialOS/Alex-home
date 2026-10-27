@@ -1,6 +1,6 @@
-# AgentOS Conductor
+# Conductor SDK
 
-**Routes, tracks and costs agent work.**
+**Routes, tracks and costs agent work.** By Signal&.
 
 You describe each agent in a plain-text card and put the cards in a folder. Give the conductor a request:
 
@@ -10,7 +10,7 @@ You describe each agent in a plain-text card and put the cards in a folder. Give
 
 It does not do the work, host anything or set limits. Models, your own code, limits and storage plug in.
 
-**Status: v0.1, unpublished.** 42 tests pass offline and against a stand-in for the Claude API. The hello example has run on live Claude and finished (26 October 2026).
+**Status: v0.1, unpublished.** 42 tests pass offline and against a stand-in for the Claude API. On live Claude (27 October 2026), the desk example sent six varied requests at once: all six went to the agents and models a person would choose, in 18 seconds, for an estimated $0.09.
 
 ## Try it
 

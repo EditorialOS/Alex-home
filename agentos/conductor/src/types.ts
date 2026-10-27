@@ -1,4 +1,4 @@
-// Shared types for the AgentOS Conductor: cards (what an agent is), missions
+// Shared types for Conductor SDK: cards (what an agent is), missions
 // (one request's tree of work), and the points where everything else plugs in:
 // models, code, a planner, a store, and gates.
 

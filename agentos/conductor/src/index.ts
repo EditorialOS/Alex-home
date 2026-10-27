@@ -1,4 +1,4 @@
-// The AgentOS Conductor: runs agents written as plain-text cards. It routes
+// Conductor SDK, by Signal&: runs agents written as plain-text cards. It routes
 // requests, breaks work into steps, hands each step to its card, enforces the
 // cards' rules, and waits for people. Models, limits, logging and hosting plug
 // in through models, plugs, the planner, gates and the store.

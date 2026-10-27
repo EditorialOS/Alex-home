@@ -2,7 +2,7 @@
   "name": "@agentos/conductor",
   "version": "0.1.0",
   "private": true,
-  "description": "Routes, tracks and costs agent work. Agents are plain-text cards; models, limits and hosting plug in.",
+  "description": "Conductor SDK by Signal&: routes, tracks and costs agent work. Agents are plain-text cards; models, limits and hosting plug in.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

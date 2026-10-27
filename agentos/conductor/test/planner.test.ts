@@ -32,6 +32,10 @@ test('the planner sees single agents first, is told to prefer one, and uses the 
   assert.match(plan.system, /Prefer the simplest route/);
   const members = plan.prompt.split('## Members')[1]!;
   assert.ok(members.indexOf('- researcher') < members.indexOf('- studio (team)'), 'single agents are listed before teams');
+  // The live run's bug: the model wrote "id: description" as the capability. The schema allows ids only.
+  const item = ((plan.schema!.properties as any).steps.items.properties) as Record<string, { enum?: string[] }>;
+  assert.deepEqual(item.capability_match!.enum!.sort(), ['run', 'work']);
+  assert.deepEqual(item.assigned_agent!.enum!.sort(), ['researcher', 'studio', 'writer']);
 });
 
 test('at the depth limit, the planner is not offered teams at all', async () => {

@@ -82,12 +82,12 @@ function planPrompt({ mission, node, capability, allowed, violations }: PlanRequ
   lines.push('', '## Members');
   for (const card of allowed) {
     lines.push(`- ${card.id} (${card.runtime === 'conductor' ? 'team' : card.runtime}): ${card.role}`);
-    for (const c of card.capabilities) lines.push(`  - ${c.id}: ${c.description}`);
+    for (const c of card.capabilities) lines.push(`  - capability "${c.id}": ${c.description}`);
   }
   if (violations.length) {
     lines.push('', '## Your last plan was rejected', ...violations.map((violation) => `- ${violation}`), 'Write a plan that fixes these.');
   }
-  lines.push('', 'Reply with JSON: {"steps": [{"id", "assigned_agent", "capability_match", "depends_on", "description"}]}.');
+  lines.push('', 'Reply with JSON: {"steps": [{"id", "assigned_agent", "capability_match", "depends_on", "description"}]}. capability_match is the capability\'s id alone, such as "research".');
   return lines.filter((line) => line !== '').join('\n');
 }
 
@@ -102,7 +102,8 @@ function planSchema(allowed: Card[]): Record<string, unknown> {
           properties: {
             id: { type: 'string' },
             assigned_agent: { type: 'string', enum: allowed.map((card) => card.id) },
-            capability_match: { type: 'string' },
+            // Only real capability ids: a model left free here copies the description along with the id.
+            capability_match: { type: 'string', enum: [...new Set(allowed.flatMap((card) => card.capabilities.map((c) => c.id)))] },
             depends_on: { type: 'array', items: { type: 'string' } },
             description: { type: 'string' },
           },

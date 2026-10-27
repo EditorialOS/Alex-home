@@ -7,7 +7,7 @@ A card is a short text file that describes one agent: what it does, which model 
 Paste this into Claude, with your team described at the end. Then put the files it gives you in a folder and run `conductor check --dir <folder>`. If `check` lists mistakes, paste them back to Claude and ask it to fix them.
 
 ````text
-Write agent cards for the AgentOS Conductor, one file per agent, from the team I describe at the end.
+Write agent cards for Conductor SDK, one file per agent, from the team I describe at the end.
 
 The format:
 - A team is a folder. Its conductor is the folder's agent.md (runtime: conductor). The other .md files in the folder are its members. Teams can sit inside teams.
