@@ -1,32 +1,64 @@
 # AgentOS Conductor
 
-The conductor runs agents written as plain-text cards. Give it a folder of cards and a request. It works out which card does what, in what order, under the rules written on the cards. It waits for a person where the cards say to, and picks up where it left off.
+**Routes, tracks and costs agent work.**
 
-It does not do the work, call models, set limits or host anything. Those plug in.
+You describe each agent in a plain-text card and put the cards in a folder. Give the conductor a request:
 
-**Status: v0.1, unpublished.** 37 tests pass, offline and against a stand-in for the Claude API. The hello example has run on live Claude and finished (26 October 2026).
+- **Route:** it decides which agent does each piece of the work, on which model, and in what order. It stops for a person wherever the cards say to.
+- **Track:** it records every call: who asked, which agent, which model and why, what came back, and who approved what.
+- **Cost:** it prices every call from its token usage, so you can see what each agent and each person spent.
+
+It does not do the work, host anything or set limits. Models, your own code, limits and storage plug in.
+
+**Status: v0.1, unpublished.** 42 tests pass offline and against a stand-in for the Claude API. The hello example has run on live Claude and finished (26 October 2026).
 
 ## Try it
 
 Node 22.18 or later runs the TypeScript directly.
 
 ```sh
-cd agentos/conductor
 npm install
-node examples/hello/run.ts                                   # offline unless ANTHROPIC_API_KEY is set
-node addons/cli.ts check --dir examples/hello/agents         # load the cards, show the team
+node examples/desk/run.ts      # six requests, four agents: who did what, on which model, for how much
+node examples/hello/run.ts     # a recipe and a host's sign-off
+node addons/cli.ts check --dir examples/desk/agents
 ```
 
-## What is in the conductor, and what plugs in
+Both examples run offline with canned answers unless `ANTHROPIC_API_KEY` is set.
 
-| In the conductor | Plugs in |
-| --- | --- |
-| Reading cards; a folder with an `agent.md` is a team, and teams nest | **models**: a `ModelProvider` runs `model` cards (`./claude` is one) |
-| Routing a request: a signal word, then the router, then a person | **plugs**: your code for `function` cards |
-| Recipes, and checking any plan before a step runs | **planner**: plans teams with no recipe and routes requests (`./planner`) |
-| Rules: sign-offs bound to the exact output, checks that send work back, steps that must come first | **gates**: see every call before and after it: limits, budgets, model choice, logging (`./switch`) |
-| Waiting for people; resuming where it stopped | **store**: where missions are kept (`MemoryStore`, `FileStore`, or yours) |
-| The mission tree, and a record of every call | **clients**: the `conductor` command, or your app |
+## Route
+
+**Who does the work.** A folder with an `agent.md` is a team, and teams can sit inside teams. A team splits a request between its members in one of two ways:
+- a recipe written on its card, for work that always runs the same way;
+- its own model reads the request and picks the members, for work that varies.
+
+When a team offers several kinds of work, a request picks one by a signal word such as `/promo`. If there is none, the team's model chooses, and if nothing fits, a person is asked.
+
+The conductor checks every plan before a step runs: the agents must be on the team and able to do the job, and the team's rules must hold. It prefers the simplest route: one agent when one can do the whole job, and a team only when no single agent fits. Pieces that don't wait on each other run at the same time.
+
+**Which model.** A card names its model. Each of its capabilities can name its own, so headlines can run on a small model and long articles on a large one. If a model fails, the next one on the card's fallback list answers. A gate can choose a different model for a call, for example a cheaper one past a spend line.
+
+**Where people come in.** Rules on a card:
+- **Sign-offs** are tied to the exact output a person read.
+- **Checks** let another agent score the work and send it back with notes.
+- **Must-come-first rules** keep one step ahead of another, such as rights cleared before release.
+
+Work waits for a person as long as it takes, then picks up where it stopped.
+
+## Track
+
+Each request becomes a mission: a tree of tasks, saved after every step. Every call to an agent, failed ones included, leaves a record: the agent and capability, the model and why it answered, the cost, the time, and how it ended. Sign-offs, send-backs and fixes record who made them.
+
+Each task receives the output of every task upstream of it. A checker receives what the checked task was given, then its output.
+
+```sh
+conductor status <mission>          # the tree, and what is waiting for whom
+conductor output <mission> <task>   # any task's full output
+conductor usage                     # this month, by agent and by person
+```
+
+## Cost
+
+The Claude add-on prices each call from its token usage, against a dated list of Anthropic's prices that you can override. A call with no known price is recorded as **unpriced**, never as $0. The `usage` report shows spend by agent, model and person, next to each agent's limits. Limits themselves are an add-on: the switch.
 
 ## A card
 
@@ -37,7 +69,7 @@ node addons/cli.ts check --dir examples/hello/agents         # load the cards, s
 - **agent_id**: `writer`
 - **name**: Writer
 - **version**: `0.1.0`
-- **role**: Writes scripts the host can read aloud, using only the research.
+- **role**: Writes finished copy: posts, announcements, short articles, and headlines.
 - **runtime**: `model`
 
 ## Plug
@@ -45,23 +77,26 @@ node addons/cli.ts check --dir examples/hello/agents         # load the cards, s
 plug:
   model: claude-opus-5-5
   fallback: [claude-sonnet-5-5]
-  effort: high
+  effort: medium
 ```
 
 ## Capabilities
 ```yaml
 capabilities:
-  - id: draft
-    description: "A script of about eight minutes read aloud."
+  - id: article
+    description: "A finished piece of writing: a post, an announcement or a short article."
+  - id: headlines
+    description: "Five headline or title options for a piece, nothing else."
+    plug:
+      model: claude-haiku-5-5
+      effort: low
 ```
 
 ## Instructions
-Short sentences; it is read aloud. Use only facts in the research.
+Write plainly, in short sentences. If research or notes came with the task, use only the facts in them.
 ````
 
-Identity is in bold bullets. Settings are in ```yaml blocks named by their top-level key. A model card's `## Instructions` is its prompt. A card with a mistake is refused whole, with every reason.
-
-A block only an add-on reads, such as `switch:`, is accepted only when that add-on's gate is passed to `loadAgents`. Otherwise it is an error, so a typo is never silently ignored.
+Identity goes in bold bullets. Settings go in ```yaml blocks, named by their top-level key. A model card's `## Instructions` section is its prompt. A card with a mistake is refused whole, with every reason. [WRITING-CARDS.md](WRITING-CARDS.md) has the full format, and a prompt for having Claude write cards from a plain description of your team.
 
 ## From code
 
@@ -69,26 +104,31 @@ A block only an add-on reads, such as `switch:`, is accepted only when that add-
 import { Conductor, FileStore, loadAgents } from '@agentos/conductor';
 import { AnthropicModels } from '@agentos/conductor/claude';
 import { ModelPlanner } from '@agentos/conductor/planner';
-import { switchGate } from '@agentos/conductor/switch';
 
-const gates = [switchGate()];
 const models = new AnthropicModels();
 const conductor = new Conductor({
-  registry: await loadAgents('agents', { gates }),
+  registry: await loadAgents('agents'),
   store: new FileStore('.agentos/missions'),
   models,
   planner: new ModelPlanner({ models }),
-  gates,
 });
 
-const mission = await conductor.start('episode', 'Episode 12: mixing vocals on cheap headphones', { user: { id: 'maya' } });
+const mission = await conductor.start('desk', 'Give me five headline options for a post about small rooms', { user: { id: 'sam' } });
 // Later, in any process with the same store:
-await conductor.approve(mission.id, 'task-2', { output_hash, by: 'maya' });
+// await conductor.approve(mission.id, 'task-2', { output_hash, by: 'maya' });
 ```
 
-Only `registry` is required. With no models, a model card's task fails with "no model provider is configured". With no planner, a team with no recipe, or a request that names no capability and matches no signal, waits for a person.
+Only `registry` is required. With no models, a model card's task fails with "no model provider is configured". With no planner, a team with no recipe, or a request that names no capability and matches no signal word, waits for a person.
 
-## A gate
+## What plugs in
+
+| Plug point | What it is |
+| --- | --- |
+| **models** | A `ModelProvider` runs model cards. `@agentos/conductor/claude` is one; `routeModels` mixes providers by name prefix. |
+| **plugs** | Your code, for `function` cards. |
+| **planner** | The model that routes requests and splits a team's work. `@agentos/conductor/planner` is one. |
+| **gates** | See every call before it is made, and its record after. A gate can stop a call (a person is asked) or choose another model. Limits, budgets and logging live here. |
+| **store** | Where missions are kept: `MemoryStore`, `FileStore`, or your own. |
 
 ```ts
 const noWeekends: Gate = {
@@ -98,24 +138,24 @@ const noWeekends: Gate = {
 };
 ```
 
-`before` can stop a call (the task waits for a person), or choose another model for it. `after` gets the record of every call, failed ones included.
-
 ## Add-ons
 
 | Import | What it is |
 | --- | --- |
-| `@agentos/conductor/claude` | Runs model cards on Claude: streamed, with refusals handled, server-side fallbacks, and cost from token usage. Needs `@anthropic-ai/sdk`. |
-| `@agentos/conductor/planner` | A model plans teams with no recipe, and routes requests that name no capability. |
+| `@agentos/conductor/claude` | Runs model cards on Claude: streamed replies, refusals handled, server-side fallbacks, and cost from token usage. Needs `@anthropic-ai/sdk`. |
+| `@agentos/conductor/planner` | Routes requests and splits a team's work, preferring the simplest route. |
 | `@agentos/conductor/switch` | A gate for a card's `switch:` block: on or off, who may use it, monthly runs and spend, a cheaper model past a spend line, and a budget per mission. |
-| `@agentos/conductor/usage` | Who used which card, on which model, for how much, read from the records. |
+| `@agentos/conductor/usage` | Spend, runs and models, by agent and by person, read from the records. |
 | `@agentos/conductor/models` | `routeModels` (several providers by name prefix) and `scriptedModels` (canned answers, for tests and dry runs). |
 | `conductor` command | check, run, status, output, list, usage, approve, reject, resolve, advance and cancel. It plugs in Claude, the planner and the switch by default. Exit codes: 0 done, 1 failed, 2 a mistake in the command, 3 waiting for a person. |
 
-## Relation to the AgentOS SDK
+A block only an add-on reads, such as `switch:`, is accepted only when that add-on's gate is passed to `loadAgents`. Otherwise it is an error, so a typo is never silently ignored.
 
-`agentos/sdk` is the fuller product, with the switch and usage report built in. This package is the conductor alone, with those as add-ons. The two are separate, and neither depends on the other.
+## Limits of v0.1
 
-Cards are the same with one difference: the cheaper model goes in the switch block (`downgrade_to`), not on the plug (`plug.downgrade`).
+- It runs in one process. Missions survive on disk, and resume from any process that reads the same store, but nothing is hosted.
+- Limits are checked before each call. When several calls run at once, a limit can be passed by the number of calls already running.
+- Cards run models, your code, people and other teams. Agents behind MCP or A2A are not built yet.
 
 ## Development
 
@@ -125,4 +165,6 @@ npm run typecheck   # src, add-ons, tests and examples
 npm run build       # dist/, with the conductor command
 ```
 
-Licence: not chosen yet (`UNLICENSED`).
+## Licence
+
+Apache 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

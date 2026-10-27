@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
 import { loadAgents, parseCard } from '../src/index.ts';
 import { switchGate } from '../addons/switch.ts';
@@ -82,8 +83,11 @@ test('a block only an add-on reads is refused unless that add-on is loaded', asy
   assert.deepEqual(errors, ['`switch`: `max_runs_per_month` must be a number of 0 or more']);
 });
 
-test('the spec packs load; runtimes v0 does not have yet are reported, not guessed', async () => {
-  const registry = await loadAgents(new URL('../../packs', import.meta.url).pathname);
+const PACKS = new URL('../../packs', import.meta.url).pathname;
+
+// The spec's example packs sit beside this package in the AgentOS project; a copy of the conductor on its own skips this.
+test('the spec packs load; runtimes v0 does not have yet are reported, not guessed', { skip: !existsSync(PACKS) && 'no spec packs beside this package' }, async () => {
+  const registry = await loadAgents(PACKS);
   const reasons = registry.invalid.flatMap((entry) => entry.errors);
   assert.ok(registry.cards.size > 0);
   for (const reason of reasons) assert.match(reason, /is in the spec but not in this conductor yet|which is invalid/);

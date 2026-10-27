@@ -6,6 +6,8 @@ import { test } from 'node:test';
 import { agent, Conductor, ConflictError, createRegistry, FileStore, RefusalError } from '../src/index.ts';
 import type { FunctionPlug, Gate, Mission, Planner, RunRecord, Step } from '../src/index.ts';
 import { scriptedModels } from '../addons/models.ts';
+import { formatMission } from '../addons/format.ts';
+import { formatUsage, usageReport } from '../addons/usage.ts';
 import { echoPlugs, setup, team, verdicts, worker } from './helpers.ts';
 
 const statuses = (mission: Mission) => Object.fromEntries(Object.values(mission.nodes).map((node) => [node.id, node.status]));
@@ -365,4 +367,101 @@ test('a task gets every output upstream of it, and its checker sees what it saw'
   // A later task gets a team's output once, not again task by task.
   assert.match(messages.publish![0]!, /### task-1: [\s\S]*### task-2: /);
   assert.doesNotMatch(messages.publish![0]!, /### task-2\.1/);
+});
+
+test('model choice: a capability can name its own model, and the record says which model answered', async () => {
+  const asked: string[] = [];
+  const conductor = setup(
+    [
+      team('desk', ['writer'], [['writer', 'article'], ['writer', 'headline']]),
+      {
+        id: 'writer',
+        role: 'Writes',
+        runtime: 'model',
+        plug: { model: 'big', effort: 'high' },
+        capabilities: [
+          { id: 'article', description: 'a long article' },
+          { id: 'headline', description: 'five headlines', plug: { model: 'small', effort: 'low' } },
+        ],
+      },
+    ],
+    {
+      models: scriptedModels((request) => {
+        asked.push(`${request.model}/${request.effort}`);
+        return `written by ${request.model}`;
+      }),
+    },
+  );
+  const mission = await conductor.start('desk', 'a post');
+  assert.deepEqual(asked, ['big/high', 'small/low']);
+  assert.equal(mission.nodes['task-2']!.runs[0]!.model, 'small');
+  assert.throws(() => agent({ id: 'w', role: 'w', runtime: 'model', capabilities: [{ id: 'a', description: 'a' }] }), /on the card or on every capability/);
+  assert.doesNotThrow(() => agent({ id: 'w', role: 'w', runtime: 'model', capabilities: [{ id: 'a', description: 'a', plug: { model: 'm' } }] }));
+});
+
+test('independent tasks run at the same time', async () => {
+  let release: () => void = () => {};
+  const bStarted = new Promise<void>((resolve) => (release = resolve));
+  const order: string[] = [];
+  const conductor = setup(
+    [
+      {
+        id: 'crew',
+        role: 'crew',
+        runtime: 'conductor',
+        members: ['a', 'b', 'c'],
+        capabilities: [
+          {
+            id: 'run',
+            description: 'a and b side by side, then c',
+            steps: [
+              { id: 'a', assigned_agent: 'a', capability_match: 'work', depends_on: [] },
+              { id: 'b', assigned_agent: 'b', capability_match: 'work', depends_on: [] },
+              { id: 'c', assigned_agent: 'c', capability_match: 'work', depends_on: ['a', 'b'] },
+            ],
+          },
+        ],
+      },
+      worker('a'),
+      worker('b'),
+      worker('c'),
+    ],
+    {
+      plugs: {
+        // a finishes only after b has started: run one at a time, and this never finishes.
+        a: async () => {
+          await Promise.race([bStarted, new Promise((_, reject) => setTimeout(() => reject(new Error('b never started while a ran')), 2000))]);
+          order.push('a');
+          return 'a done';
+        },
+        b: async () => {
+          release();
+          order.push('b');
+          return 'b done';
+        },
+        c: async (task) => {
+          order.push('c');
+          return task.message.includes('a done') && task.message.includes('b done') ? 'c saw both' : 'c missed one';
+        },
+      },
+    },
+  );
+  const mission = await conductor.start('crew', 'go');
+  assert.equal(mission.status, 'complete');
+  assert.deepEqual(order, ['b', 'a', 'c']);
+  assert.equal(mission.nodes['task-3']!.output, 'c saw both');
+});
+
+test('a model that reports no price is recorded as unpriced, never as free', async () => {
+  const conductor = setup([team('crew', ['m'], [['m', 'work']]), { id: 'm', role: 'm', runtime: 'model', plug: { model: 'mystery-model' }, capabilities: [{ id: 'work', description: 'w' }] }], {
+    models: scriptedModels((request) => ({ text: 'done', model: request.model })),
+  });
+  const mission = await conductor.start('crew', 'go');
+  const run = mission.nodes['task-1']!.runs[0]!;
+  assert.deepEqual([run.usd, run.unpriced], [0, true]);
+  assert.ok(mission.nodes['task-1']!.events.some((event) => event.includes('cost unknown')));
+  assert.match(formatMission(mission), /\$0\.0000 \+ 1 unpriced call/);
+  const report = usageReport([mission], new Date('2000-01-01'), new Date('3000-01-01'));
+  assert.equal(report.unpriced, 1);
+  assert.match(formatUsage(report), /plus 1 call with no price/);
 });

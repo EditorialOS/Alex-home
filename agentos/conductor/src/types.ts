@@ -33,6 +33,12 @@ export interface Capability {
   signals?: string[];
   /** Workers: the call cannot be taken back, so a failure is never retried automatically. */
   irreversible?: boolean;
+  /**
+   * Model choice for this capability only, over the card's own plug: a
+   * headline on a small model, a long article on a large one. Fields it
+   * leaves out come from the card's plug.
+   */
+  plug?: Plug;
 }
 
 /** Matches nodes by agent, capability, or both. */
@@ -182,6 +188,8 @@ export interface RunRecord {
   user?: string;
   /** Human cards: the person who did the task. */
   by?: string;
+  /** A model answered but reported no price: the cost is unknown, not zero. `usd` stays 0. */
+  unpriced?: boolean;
 }
 
 export interface MissionNode {

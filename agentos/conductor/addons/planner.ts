@@ -2,6 +2,7 @@
 // and the team's members and writes the steps. The conductor checks the plan
 // against the same rules as a recipe, and asks once more if it breaks them.
 
+import { plugFor } from '../src/card.ts';
 import type { Card, ModelProvider, Plug, PlanRequest, PlanResult, Planner, RouteRequest, RouteResult, Step } from '../src/types.ts';
 
 export interface ModelPlannerOptions {
@@ -22,7 +23,7 @@ export class ModelPlanner implements Planner {
   }
 
   async plan(request: PlanRequest): Promise<PlanResult> {
-    const plug = request.team.plug ?? this.plug;
+    const plug = { ...this.plug, ...plugFor(request.team, request.capability.id) };
     const response = await this.models.complete({
       model: plug.model,
       system: planSystem(request.team),
@@ -36,7 +37,7 @@ export class ModelPlanner implements Planner {
 
   /** Picks the capability that fits a request, or none. Routing is cheap: effort low. */
   async route({ mission, team, note }: RouteRequest): Promise<RouteResult> {
-    const plug = team.plug ?? this.plug;
+    const plug = { ...this.plug, ...team.plug };
     const ids = team.capabilities.map((c) => c.id);
     const lines = ['## Request', mission.request, '', '## Capabilities', ...team.capabilities.map((c) => `- ${c.id}: ${c.description}`)];
     if (note) lines.push('', '## A note from a person', note);
@@ -65,8 +66,8 @@ function planSystem(team: Card): string {
   return [
     `You are the conductor of ${team.name}: ${team.role}`,
     'You plan the work and hand it out; you never do the work yourself.',
-    'Give each step to one member that has the capability it needs. A step gets the outputs of the steps in its depends_on, so list every step whose output it needs; leave depends_on empty for steps that can start at once.',
-    'Use as few steps as the request needs.',
+    'Prefer the simplest route. If one member can do the whole request, give it to that member as a single step. Split the work only when no single member can do it, and give work to a team only when no single member fits: teams cost more.',
+    'Give each step to one member that has the capability it needs. List in depends_on the steps whose output a step needs; leave it empty for steps that can start at once, since those run at the same time.',
     team.instructions,
   ]
     .filter(Boolean)
@@ -80,7 +81,7 @@ function planPrompt({ mission, node, capability, allowed, violations }: PlanRequ
   if (inputs.length) lines.push(`Inputs: ${inputs.map(([key, value]) => `${key} = ${value}`).join(' · ')}`);
   lines.push('', '## Members');
   for (const card of allowed) {
-    lines.push(`- ${card.id} (${card.runtime}): ${card.role}`);
+    lines.push(`- ${card.id} (${card.runtime === 'conductor' ? 'team' : card.runtime}): ${card.role}`);
     for (const c of card.capabilities) lines.push(`  - ${c.id}: ${c.description}`);
   }
   if (violations.length) {

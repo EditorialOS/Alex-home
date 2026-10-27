@@ -19,10 +19,19 @@ export interface AnthropicModelsOptions {
   serverFallbacks?: boolean;
   /** Used when a card sets no `max_tokens`. Default 16000. */
   maxTokens?: number;
+  /** Prices to add or correct, by model name. A model with no price is recorded as unpriced. */
+  prices?: Record<string, Price>;
 }
 
 /** USD per million tokens: input, output, cache write (5 minutes), cache read. */
-const PRICES: Record<string, [number, number, number, number]> = {
+export type Price = [input: number, output: number, cacheWrite: number, cacheRead: number];
+
+/**
+ * Anthropic's list prices, as checked in October 2026. Prices change: pass
+ * `prices` to AnthropicModels to add or correct one. A model missing here is
+ * recorded as unpriced, never as free.
+ */
+export const CLAUDE_PRICES: Record<string, Price> = {
   'claude-fable-5-1': [10, 50, 12.5, 0.25],
   'claude-opus-5-5': [4, 20, 5, 0.2],
   'claude-sonnet-5-5': [2, 10, 2.5, 0.2],
@@ -72,7 +81,7 @@ export class AnthropicModels implements ModelProvider {
       .flatMap((block) => (block.type === 'text' ? [block.text] : []))
       .join('')
       .trim();
-    return { text, model: response.model, cost_usd: costOf(response.model, response.usage) };
+    return { text, model: response.model, cost_usd: costOf(response.model, response.usage, { ...CLAUDE_PRICES, ...this.options.prices }) };
   }
 }
 
@@ -84,8 +93,8 @@ interface Usage {
 }
 
 /** What a call cost, or undefined for a model without a known price. */
-export function costOf(model: string, usage: Usage): number | undefined {
-  const price = PRICES[model.replace(/-\d{8}$/, '')];
+export function costOf(model: string, usage: Usage, prices: Record<string, Price> = CLAUDE_PRICES): number | undefined {
+  const price = prices[model.replace(/-\d{8}$/, '')];
   if (!price) return undefined;
   const [input, output, cacheWrite, cacheRead] = price;
   const usd =

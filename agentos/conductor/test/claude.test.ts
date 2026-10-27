@@ -111,4 +111,5 @@ test('cost counts cache reads and writes, and is unknown for unpriced models', (
   const usage = { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 1000, cache_read_input_tokens: 10_000 };
   assert.equal(costOf('claude-sonnet-5-5', usage), (100 * 2 + 10 * 10 + 1000 * 2.5 + 10_000 * 0.2) / 1_000_000);
   assert.equal(costOf('some-other-model', usage), undefined);
+  assert.equal(costOf('some-other-model', usage, { 'some-other-model': [1, 1, 1, 1] }), (100 + 10 + 1000 + 10_000) / 1_000_000);
 });

@@ -202,7 +202,12 @@ export function validateCard(card: Card, errors: string[]): void {
       );
     }
   }
-  if (card.runtime === 'model' && !card.plug) errors.push('a model card needs a `plug:` block naming its model');
+  if (card.runtime === 'model' && !card.plug && card.capabilities.some((c) => !c.plug)) {
+    errors.push('a model card needs a `plug:` block naming its model, on the card or on every capability');
+  }
+  if (card.runtime !== 'model' && card.runtime !== 'conductor' && card.capabilities.some((c) => c.plug)) {
+    errors.push(`a ${card.runtime} card's capabilities cannot have a \`plug:\` block`);
+  }
   if (card.plug && card.runtime !== 'model' && card.runtime !== 'conductor') {
     errors.push(`a ${card.runtime} card cannot have a \`plug:\` block`);
   }
@@ -267,7 +272,7 @@ function readCapabilities(value: unknown, errors: string[]): Capability[] {
   }
   return value.flatMap((item, index) => {
     const where = `capabilities[${index}]`;
-    const keys = ['id', 'description', 'complexity', 'autonomous', 'steps', 'score_scale', 'signals', 'irreversible'];
+    const keys = ['id', 'description', 'complexity', 'autonomous', 'steps', 'score_scale', 'signals', 'irreversible', 'plug'];
     if (!expectKeys(item, keys, where, errors)) return [];
     const capability: Capability = {
       id: requireString(item.id, `${where}.id`, errors),
@@ -283,6 +288,7 @@ function readCapabilities(value: unknown, errors: string[]): Capability[] {
     if (item.steps !== undefined) capability.steps = readSteps(item.steps, `${where}.steps`, errors);
     if (item.signals !== undefined) capability.signals = readStringList(item.signals, `${where}.signals`, errors);
     if (item.irreversible !== undefined) capability.irreversible = requireBoolean(item.irreversible, `${where}.irreversible`, errors);
+    if (item.plug !== undefined) capability.plug = readPlug(item.plug, errors, `${where}.plug`);
     return [capability];
   });
 }
@@ -426,15 +432,15 @@ function readFailureModes(value: unknown, errors: string[]): FailureMode[] {
   });
 }
 
-function readPlug(value: unknown, errors: string[]): Plug | undefined {
+function readPlug(value: unknown, errors: string[], where = 'plug'): Plug | undefined {
   if (value === undefined) return undefined;
-  if (!expectKeys(value, ['model', 'fallback', 'effort', 'max_tokens'], 'plug', errors)) return undefined;
-  const plug: Plug = { model: requireString(value.model, 'plug.model', errors) };
-  if (value.fallback !== undefined) plug.fallback = readStringList(value.fallback, 'plug.fallback', errors);
+  if (!expectKeys(value, ['model', 'fallback', 'effort', 'max_tokens'], where, errors)) return undefined;
+  const plug: Plug = { model: requireString(value.model, `${where}.model`, errors) };
+  if (value.fallback !== undefined) plug.fallback = readStringList(value.fallback, `${where}.fallback`, errors);
   if (value.effort !== undefined) {
-    plug.effort = oneOf(value.effort, ['low', 'medium', 'high', 'xhigh', 'max'] as const, 'plug.effort', errors);
+    plug.effort = oneOf(value.effort, ['low', 'medium', 'high', 'xhigh', 'max'] as const, `${where}.effort`, errors);
   }
-  if (value.max_tokens !== undefined) plug.max_tokens = requireNumber(value.max_tokens, 'plug.max_tokens', errors);
+  if (value.max_tokens !== undefined) plug.max_tokens = requireNumber(value.max_tokens, `${where}.max_tokens`, errors);
   return plug;
 }
 
@@ -490,4 +496,11 @@ function oneOf<T extends string>(value: unknown, options: readonly T[], where: s
   if (typeof value === 'string' && (options as readonly string[]).includes(value)) return value as T;
   errors.push(`\`${where}\` must be one of ${options.join(', ')}`);
   return options[0]!;
+}
+
+/** The plug a call to this capability uses: the capability's own model choice over the card's. */
+export function plugFor(card: Card, capabilityId: string): Plug | undefined {
+  const own = card.capabilities.find((c) => c.id === capabilityId)?.plug;
+  if (!own) return card.plug;
+  return card.plug ? { ...card.plug, ...own } : own;
 }

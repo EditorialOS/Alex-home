@@ -5,7 +5,7 @@
 
 export { Conductor, ConflictError, GateStop, TimeoutError, taskMessage } from './conductor.ts';
 export type { ApproveInput, ConductorOptions, RejectInput, ResolveInput, StartOptions } from './conductor.ts';
-export { parseCard, validateCard } from './card.ts';
+export { parseCard, plugFor, validateCard } from './card.ts';
 export type { ParsedCard, ParseOptions } from './card.ts';
 export { agent, allowedFor, createRegistry, loadAgents } from './registry.ts';
 export type { AgentDefinition, CardError, LoadOptions, Registry } from './registry.ts';

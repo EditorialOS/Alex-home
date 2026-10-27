@@ -11,6 +11,8 @@ export interface AgentUsage {
   runs: number;
   failed: number;
   usd: number;
+  /** Calls a model answered but nobody priced: their cost is unknown, not zero. */
+  unpriced: number;
   ms: number;
   /** Calls per model, with how the model was chosen when it was not the card's own. */
   models: Record<string, number>;
@@ -21,6 +23,8 @@ export interface UsageReport {
   since: string;
   until: string;
   usd: number;
+  /** Calls with no price, across every agent. */
+  unpriced: number;
   agents: AgentUsage[];
   callers: { user: string; runs: number; usd: number }[];
 }
@@ -35,11 +39,12 @@ export function usageReport(missions: Mission[], since: Date, until: Date): Usag
     for (const node of Object.values(mission.nodes)) {
       for (const run of node.runs) {
         if (run.at < from || run.at >= to) continue;
-        const entry = agents.get(run.agent) ?? { agent: run.agent, runs: 0, failed: 0, usd: 0, ms: 0, models: {}, callers: {} };
+        const entry = agents.get(run.agent) ?? { agent: run.agent, runs: 0, failed: 0, usd: 0, unpriced: 0, ms: 0, models: {}, callers: {} };
         agents.set(run.agent, entry);
         if (run.outcome === 'ok') entry.runs += 1;
         else entry.failed += 1;
         entry.usd += run.usd;
+        if (run.unpriced) entry.unpriced += 1;
         entry.ms += run.ms;
         if (run.model) {
           const label = run.via ? `${run.model} (${run.via})` : run.model;
@@ -63,6 +68,7 @@ export function usageReport(missions: Mission[], since: Date, until: Date): Usag
     since: from,
     until: to,
     usd: total,
+    unpriced: [...agents.values()].reduce((count, entry) => count + entry.unpriced, 0),
     agents: [...agents.values()].sort((a, b) => b.usd - a.usd || b.runs - a.runs),
     callers: [...callers.values()].sort((a, b) => b.usd - a.usd || b.runs - a.runs),
   };
@@ -78,7 +84,8 @@ export function monthOf(now: Date, month?: string): { since: Date; until: Date }
 }
 
 export function formatUsage(report: UsageReport, registry?: Registry): string {
-  const lines = [`Usage from ${report.since.slice(0, 10)} to ${report.until.slice(0, 10)}: $${report.usd.toFixed(4)}`, ''];
+  const unknown = report.unpriced ? `, plus ${report.unpriced} call${report.unpriced === 1 ? '' : 's'} with no price` : '';
+  const lines = [`Usage from ${report.since.slice(0, 10)} to ${report.until.slice(0, 10)}: $${report.usd.toFixed(4)}${unknown}`, ''];
   if (!report.agents.length) return [...lines, 'No calls.'].join('\n');
   const width = Math.max(5, ...report.agents.map((entry) => entry.agent.length));
   lines.push(`${'agent'.padEnd(width)}  ${'runs'.padStart(5)}  ${'failed'.padStart(6)}  ${'usd'.padStart(9)}  ${'avg'.padStart(6)}  limits`);
@@ -98,6 +105,7 @@ export function formatUsage(report: UsageReport, registry?: Registry): string {
       `${entry.agent.padEnd(width)}  ${String(entry.runs).padStart(5)}  ${String(entry.failed).padStart(6)}  ${`$${entry.usd.toFixed(4)}`.padStart(9)}  ${average.padStart(6)}  ${limits.join(' · ')}`,
     );
     const models = Object.entries(entry.models).map(([model, count]) => `${model} ×${count}`);
+    if (entry.unpriced) models.push(`${entry.unpriced} with no price`);
     if (models.length) lines.push(`${''.padEnd(width)}  ${models.join(', ')}`);
   }
   lines.push('', 'By caller:');

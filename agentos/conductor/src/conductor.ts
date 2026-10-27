@@ -8,7 +8,7 @@
 // `reject()` or `resolve()` (from any process, any time later) moves it on.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { resolveDependsOn, validateSteps } from './card.ts';
+import { plugFor, resolveDependsOn, validateSteps } from './card.ts';
 import { allowedFor } from './registry.ts';
 import type { Registry } from './registry.ts';
 import {
@@ -66,6 +66,8 @@ export interface ConductorOptions {
   maxDepth?: number;
   /** Tasks per mission. Default 40. */
   maxNodes?: number;
+  /** Tasks that run at the same time, when none waits on another. Default 4. */
+  maxParallel?: number;
   /** How long `advance()` waits in-process for a retry delay. Default 30 s. */
   maxWaitMs?: number;
   now?: () => Date;
@@ -156,6 +158,7 @@ export class Conductor {
   private readonly planner?: Planner;
   private readonly maxDepth: number;
   private readonly maxNodes: number;
+  private readonly maxParallel: number;
   private readonly gates: Gate[];
   private readonly maxWaitMs: number;
   private readonly now: () => Date;
@@ -168,6 +171,7 @@ export class Conductor {
     this.planner = options.planner;
     this.maxDepth = options.maxDepth ?? 4;
     this.maxNodes = options.maxNodes ?? 40;
+    this.maxParallel = Math.max(1, options.maxParallel ?? 4);
     this.gates = options.gates ?? [];
     this.maxWaitMs = options.maxWaitMs ?? 30_000;
     this.now = options.now ?? (() => new Date());
@@ -340,16 +344,22 @@ export class Conductor {
       }
     }
     const now = this.now().getTime();
-    for (const node of nodes) {
-      if (node.status !== 'pending') continue;
-      const parent = node.parent ? mission.nodes[node.parent] : undefined;
-      if (parent && parent.status !== 'running') continue;
-      if (!node.depends_on.every((dep) => mission.nodes[dep]?.status === 'complete')) continue;
-      if (node.not_before && Date.parse(node.not_before) > now) continue;
-      await this.dispatch(mission, node);
-      return true;
-    }
-    return false;
+    const ready = nodes
+      .filter((node) => {
+        if (node.status !== 'pending') return false;
+        const parent = node.parent ? mission.nodes[node.parent] : undefined;
+        if (parent && parent.status !== 'running') return false;
+        if (!node.depends_on.every((dep) => mission.nodes[dep]?.status === 'complete')) return false;
+        return !(node.not_before && Date.parse(node.not_before) > now);
+      })
+      .slice(0, this.maxParallel);
+    if (!ready.length) return false;
+    // Tasks that wait on nothing unfinished run at the same time. Each one
+    // changes only its own node (and adds to the mission's cost).
+    const results = await Promise.allSettled(ready.map((node) => this.dispatch(mission, node)));
+    const crashed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (crashed) throw crashed.reason;
+    return true;
   }
 
   private nextRetryWait(mission: Mission): number | null {
@@ -436,9 +446,14 @@ export class Conductor {
   // ------------------------------------------------------------ teams
 
   private async expand(mission: Mission, node: MissionNode, team: Card, capability: Capability): Promise<void> {
+    // The simplest route first: the planner sees single agents before teams,
+    // and no team at all where the depth limit leaves no room for one.
+    const depth = depthOf(node.id) + 1;
     const allowed = allowedFor(team)
       .map((id) => this.registry.get(id))
-      .filter((card): card is Card => card !== undefined);
+      .filter((card): card is Card => card !== undefined)
+      .filter((card) => card.runtime !== 'conductor' || depth < this.maxDepth)
+      .sort((a, b) => Number(a.runtime === 'conductor') - Number(b.runtime === 'conductor'));
     let steps: Step[];
     let source: 'recipe' | 'planner';
     if (capability.steps) {
@@ -594,7 +609,7 @@ export class Conductor {
   ): Promise<PlugResult & Timing> {
     const { node, card } = call;
     if (!this.models) throw new Error('no model provider is configured');
-    const plug = card.plug!;
+    const plug = plugFor(card, call.capability)!;
     const first = gate.model ?? plug.model;
     const models = [first, ...(plug.fallback ?? []).filter((model) => model !== first)];
     let lastError: unknown;
@@ -677,14 +692,17 @@ export class Conductor {
     const { mission, node, card, capability, kind } = call;
     const estimate = outcome === 'ok' ? card.constraints.cost_per_run_usd : undefined;
     const usd = result.cost_usd ?? estimate ?? 0;
+    // A model answered and nobody priced it: say so, rather than record a free call.
+    const unpriced = outcome === 'ok' && result.model !== undefined && result.cost_usd === undefined && estimate === undefined;
     const ms = Math.max(0, this.now().getTime() - started);
     const run: RunRecord = { agent: card.id, capability, kind, at: this.stamp(), ms, usd, outcome, model: result.model, via: result.via, user: mission.user?.id, by };
+    if (unpriced) run.unpriced = true;
     node.runs.push(run);
     node.cost_usd += usd;
     mission.cost_usd += usd;
     const on = result.model ? ` on ${result.model}${result.via ? ` (${result.via})` : ''}` : '';
     const ended = outcome === 'ok' ? 'ran' : `${outcome} from`;
-    this.event(node, `${ended} ${card.id}${on} ($${usd.toFixed(4)}, ${(ms / 1000).toFixed(1)}s)`);
+    this.event(node, `${ended} ${card.id}${on} (${unpriced ? 'cost unknown' : `$${usd.toFixed(4)}`}, ${(ms / 1000).toFixed(1)}s)`);
     for (const gate of this.gates) await gate.after?.(run, call, this.contextFor(mission));
   }
 

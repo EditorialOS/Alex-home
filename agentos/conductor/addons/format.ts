@@ -3,7 +3,10 @@
 import type { Mission, MissionNode } from '../src/types.ts';
 
 export function formatMission(mission: Mission): string {
-  const lines = [`${mission.id} · ${mission.status} · $${mission.cost_usd.toFixed(4)}${typeof mission.meta.budget_usd === 'number' ? ` of $${mission.meta.budget_usd.toFixed(2)}` : ''}`, `request: ${mission.request}`, ''];
+  const unpriced = Object.values(mission.nodes).reduce((count, node) => count + node.runs.filter((run) => run.unpriced).length, 0);
+  const cost = `$${mission.cost_usd.toFixed(4)}${unpriced ? ` + ${unpriced} unpriced call${unpriced === 1 ? '' : 's'}` : ''}`;
+  const budget = typeof mission.meta.budget_usd === 'number' ? ` of $${mission.meta.budget_usd.toFixed(2)}` : '';
+  const lines = [`${mission.id} · ${mission.status} · ${cost}${budget}`, `request: ${mission.request}`, ''];
   const walk = (node: MissionNode, prefix: string, last: boolean, top: boolean) => {
     const branch = top ? '' : last ? '└─ ' : '├─ ';
     lines.push(`${prefix}${branch}${describe(node)}`);
@@ -21,6 +24,7 @@ function describe(node: MissionNode): string {
   const extra = [
     node.attempt > 1 ? `attempt ${node.attempt}` : '',
     node.cost_usd > 0 ? `$${node.cost_usd.toFixed(4)}` : '',
+    node.runs.some((run) => run.unpriced) ? 'cost unknown' : '',
     node.runs.filter((run) => run.agent === node.agent).at(-1)?.model ?? '',
   ].filter(Boolean);
   return `${node.id}  ${node.agent}/${node.capability || '(not routed)'}  [${status}]${extra.length ? `  ${extra.join(' · ')}` : ''}`;
