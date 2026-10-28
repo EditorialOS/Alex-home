@@ -1,7 +1,8 @@
 // A stand-in for the parts of Google Drive's v3 API that storage uses, built
 // from the official client's definitions: queries by parent and name, pages,
-// downloads, exports, multipart uploads, folders, sign-in and errors. It
-// pages two files at a time, so paging is always exercised.
+// downloads, exports, multipart uploads with properties, folders, comments,
+// the change feed, sign-in and errors. It pages two at a time, so paging is
+// always exercised, and has helpers that act as a person: edit, trash, comment.
 
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -14,6 +15,18 @@ export const FORM = 'application/vnd.google-apps.form';
 export const ROOT = 'root-0';
 const PAGE = 2;
 
+export interface FakeComment {
+  id: string;
+  author: string;
+  content: string;
+  quoted?: string;
+  resolved?: boolean;
+  deleted?: boolean;
+  createdTime: string;
+  modifiedTime: string;
+  replies: { author: string; content: string; createdTime: string; deleted?: boolean }[];
+}
+
 export interface FakeFile {
   id: string;
   name: string;
@@ -21,7 +34,11 @@ export interface FakeFile {
   parents: string[];
   content: Buffer;
   version: number;
+  createdTime: string;
   modifiedTime: string;
+  trashed: boolean;
+  properties?: Record<string, string>;
+  comments: FakeComment[];
 }
 
 export interface Failure {
@@ -47,6 +64,14 @@ export interface FakeDrive {
   /** Refuse to export Docs as Markdown, as Drive would for a format it doesn't offer. */
   noMarkdown: boolean;
   add(name: string, parent?: string, content?: string | Buffer, mimeType?: string): string;
+  /** A person edits a file. */
+  edit(id: string, content: string): void;
+  /** A person moves a file to the trash. */
+  trash(id: string): void;
+  /** A person comments on a file. */
+  comment(id: string, comment: Partial<FakeComment> & { author: string; content: string }): void;
+  /** The fake's clock, a minute a tick: the next time it will stamp. */
+  clock(): string;
   close(): Promise<void>;
 }
 
@@ -54,14 +79,23 @@ export async function fakeDrive(): Promise<FakeDrive> {
   let ids = 0;
   let minutes = 0;
   const files = new Map<string, FakeFile>();
+  const feed: string[] = [];
   const now = () => new Date(Date.UTC(2026, 9, 28, 9, minutes++)).toISOString();
+  const changed = (file: FakeFile) => {
+    file.version += 1;
+    file.modifiedTime = now();
+    feed.push(file.id);
+  };
 
   const add = (name: string, parent = ROOT, content: string | Buffer = '', mimeType = 'text/plain'): string => {
     const id = `id-${++ids}`;
-    files.set(id, { id, name, mimeType, parents: [parent], content: Buffer.from(content), version: 1, modifiedTime: now() });
+    const at = now();
+    files.set(id, { id, name, mimeType, parents: [parent], content: Buffer.from(content), version: 1, createdTime: at, modifiedTime: at, trashed: false, comments: [] });
+    feed.push(id);
     return id;
   };
-  files.set(ROOT, { id: ROOT, name: 'My Drive', mimeType: FOLDER, parents: [], content: Buffer.alloc(0), version: 1, modifiedTime: now() });
+  const at = now();
+  files.set(ROOT, { id: ROOT, name: 'My Drive', mimeType: FOLDER, parents: [], content: Buffer.alloc(0), version: 1, createdTime: at, modifiedTime: at, trashed: false, comments: [] });
 
   const fake: FakeDrive = {
     url: '',
@@ -72,6 +106,21 @@ export async function fakeDrive(): Promise<FakeDrive> {
     failures: [],
     noMarkdown: false,
     add,
+    edit: (id, content) => {
+      const file = files.get(id)!;
+      file.content = Buffer.from(content);
+      changed(file);
+    },
+    trash: (id) => {
+      const file = files.get(id)!;
+      file.trashed = true;
+      changed(file);
+    },
+    comment: (id, comment) => {
+      const at = now();
+      files.get(id)!.comments.push({ id: `c-${++ids}`, createdTime: at, modifiedTime: at, replies: [], ...comment });
+    },
+    clock: () => new Date(Date.UTC(2026, 9, 28, 9, minutes)).toISOString(),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 
@@ -110,6 +159,14 @@ export async function fakeDrive(): Promise<FakeDrive> {
     }
 
     const id = (url.pathname.match(/^\/drive\/v3\/files\/([^/]+)/)?.[1] ?? '').replace(/^root$/, ROOT);
+    if (route === 'GET /drive/v3/changes/startPageToken') return send(response, 200, { startPageToken: String(feed.length) });
+    if (route === 'GET /drive/v3/changes') {
+      const start = Number(url.searchParams.get('pageToken'));
+      if (!Number.isInteger(start)) return send(response, 400, { error: { code: 400, message: 'Invalid Value', errors: [{ reason: 'invalid' }] } });
+      const page = feed.slice(start, start + PAGE).map((fileId) => ({ kind: 'drive#change', fileId, removed: false, file: view(files.get(fileId)!) }));
+      const more = start + PAGE < feed.length;
+      return send(response, 200, { changes: page, ...(more ? { nextPageToken: String(start + PAGE) } : { newStartPageToken: String(feed.length) }) });
+    }
     if (route === 'GET /drive/v3/files') return list(url, response);
     if (route === 'POST /drive/v3/files') return created(response, JSON.parse(body.toString()), Buffer.alloc(0));
     if (route === 'POST /upload/drive/v3/files') {
@@ -121,6 +178,25 @@ export async function fakeDrive(): Promise<FakeDrive> {
     }
     const file = files.get(id);
     if (!file) return send(response, 404, { error: { code: 404, message: `File not found: ${id}.`, errors: [{ reason: 'notFound' }] } });
+    if (route.endsWith('/comments')) {
+      if (!url.searchParams.get('fields')) return send(response, 400, { error: { code: 400, message: "The 'fields' parameter is required for this method.", errors: [{ reason: 'required' }] } });
+      const since = url.searchParams.get('startModifiedTime');
+      const found = file.comments.filter((comment) => !comment.deleted && (!since || comment.modifiedTime >= since));
+      const start = Number(url.searchParams.get('pageToken') ?? 0);
+      const next = start + PAGE < found.length ? String(start + PAGE) : undefined;
+      const comments = found.slice(start, start + PAGE).map((comment) => ({
+        id: comment.id,
+        author: { displayName: comment.author },
+        content: comment.content,
+        ...(comment.quoted ? { quotedFileContent: { mimeType: 'text/html', value: comment.quoted } } : {}),
+        resolved: comment.resolved === true,
+        deleted: false,
+        createdTime: comment.createdTime,
+        modifiedTime: comment.modifiedTime,
+        replies: comment.replies.map((reply) => ({ author: { displayName: reply.author }, content: reply.deleted ? undefined : reply.content, createdTime: reply.createdTime, deleted: reply.deleted === true })),
+      }));
+      return send(response, 200, { comments, ...(next ? { nextPageToken: next } : {}) });
+    }
     if (route === `GET /drive/v3/files/${url.pathname.split('/')[4]}/export`) {
       const type = url.searchParams.get('mimeType');
       const offered = file.mimeType === DOC ? (fake.noMarkdown ? ['text/plain'] : ['text/markdown', 'text/plain']) : file.mimeType === SHEET ? ['text/csv'] : [];
@@ -143,15 +219,16 @@ export async function fakeDrive(): Promise<FakeDrive> {
     if (!match) return send(response, 400, { error: { code: 400, message: `Invalid Value: ${q}`, errors: [{ reason: 'invalid' }] } });
     const parent = unquote(match[1]!).replace(/^root$/, ROOT);
     const name = match[2] === undefined ? undefined : unquote(match[2]);
-    const found = [...files.values()].filter((file) => file.parents.includes(parent) && (name === undefined || file.name === name));
+    const found = [...files.values()].filter((file) => !file.trashed && file.parents.includes(parent) && (name === undefined || file.name === name));
     const start = Number(url.searchParams.get('pageToken') ?? 0);
     const size = Math.min(Number(url.searchParams.get('pageSize') ?? 100), PAGE);
     const next = start + size < found.length ? String(start + size) : undefined;
     send(response, 200, { files: found.slice(start, start + size).map(view), ...(next ? { nextPageToken: next } : {}) });
   }
 
-  function created(response: ServerResponse, metadata: { name: string; mimeType?: string; parents?: string[] }, content: Buffer, type?: string): void {
+  function created(response: ServerResponse, metadata: { name: string; mimeType?: string; parents?: string[]; properties?: Record<string, string> }, content: Buffer, type?: string): void {
     const id = add(metadata.name, metadata.parents?.[0] ?? ROOT, content, metadata.mimeType ?? type ?? 'application/octet-stream');
+    if (metadata.properties) files.get(id)!.properties = metadata.properties;
     send(response, 200, view(files.get(id)!));
   }
 
@@ -168,8 +245,12 @@ function view(file: FakeFile): Record<string, unknown> {
     id: file.id,
     name: file.name,
     mimeType: file.mimeType,
+    createdTime: file.createdTime,
     modifiedTime: file.modifiedTime,
     version: String(file.version),
+    parents: file.parents,
+    trashed: file.trashed,
+    ...(file.properties ? { properties: file.properties } : {}),
     ...(file.mimeType === FOLDER ? {} : { size: String(file.content.length) }),
     ...(blob ? { md5Checksum: createHash('md5').update(file.content).digest('hex') } : {}),
   };

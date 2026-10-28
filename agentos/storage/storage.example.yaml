@@ -13,4 +13,5 @@ drive:
 mounts:
   # A folder's link or its id. Read-only unless it says access: write.
   briefs: { folder: "https://drive.google.com/drive/folders/REPLACE_WITH_FOLDER_ID" }
-  drafts: { folder: REPLACE_WITH_FOLDER_ID, access: write }
+  # file_as names new work in a write mount: {name}, {date}, {year}, {month}.
+  drafts: { folder: REPLACE_WITH_FOLDER_ID, access: write, file_as: "{date}-{name}" }

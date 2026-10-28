@@ -1,5 +1,5 @@
 // The storage command against the stand-in Drive: piping in and out,
-// --from, and every exit code.
+// --from, versions, receipts, comments, bundles, changes, and every exit code.
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -14,11 +14,13 @@ import type { FakeDrive } from './fake-drive.ts';
 const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 let drive: FakeDrive;
 let dir: string;
+let briefsId: string;
 
 before(async () => {
   drive = await fakeDrive();
   const drafts = drive.add('Agent drafts', undefined, '', FOLDER);
-  const briefs = drive.add('Briefs', undefined, '', FOLDER);
+  briefsId = drive.add('Briefs', undefined, '', FOLDER);
+  const briefs = briefsId;
   drive.add('Spring brief', briefs, '# Spring\n', DOC);
   dir = await mkdtemp(join(tmpdir(), 'storage-cli-'));
   await writeFile(
@@ -83,4 +85,29 @@ test('mounts shows the folders and whether the sign-in is set, without calling D
   assert.equal(code, 0);
   assert.match(stdout, /^briefs {2}read {3}folder id-\d+\ndrafts {2}write {2}folder id-\d+\n\nsign-in: token, missing \$TEST_TOKEN\n$/);
   assert.equal(drive.requests.length, before);
+});
+
+test('versions, latest, a receipt and the comments on a draft', async () => {
+  assert.equal((await run(['put', 'storage://drafts/plan.md', '--version'], 'one')).stdout, 'storage://drafts/plan.md\n');
+  assert.equal((await run(['put', 'storage://drafts/plan.md', '--version', '--agent', 'raya', '--based-on', 'storage://briefs/Spring brief'], 'two')).stdout, 'storage://drafts/plan v2.md\n');
+  assert.equal((await run(['cat', '--latest', 'storage://drafts/plan.md'])).stdout, 'two');
+  assert.equal(JSON.parse((await run(['stat', '--latest', 'storage://drafts/plan.md'])).stdout).name, 'plan v2.md');
+  assert.equal((await run(['receipt', 'storage://drafts/plan v2.md'])).stdout, 'storage://drafts/plan v2.md\nwritten by raya\nbased on:\n  Spring brief  unchanged\nfresh: its sources are unchanged\n');
+  assert.match((await run(['receipt', 'storage://drafts/plan.md'])).stdout, /no receipt: storage didn't write it with one/);
+  const draft = [...drive.files.values()].find((file) => file.name === 'plan v2.md')!;
+  drive.comment(draft.id, { author: 'Sam Lee', content: 'Which week?', quoted: 'Launch in March.' });
+  assert.match((await run(['comments', 'storage://drafts/plan v2.md'])).stdout, /^Sam Lee · 2026-10-28 \d\d:\d\d · on "Launch in March\."\n {2}Which week\?\n$/);
+  assert.equal((await run(['comments', 'storage://drafts/plan.md'])).stdout, 'no open comments\n');
+});
+
+test('a bundle, and changes kept in a cursor file that only moves after printing', async () => {
+  assert.match((await run(['bundle', 'storage://briefs'])).stdout, /^# storage:\/\/briefs\n\n1 file, as of .*## Spring brief/s);
+  assert.equal((await run(['bundle', 'storage://briefs', '--max-bytes', 'lots'])).code, 2);
+  const cursor = join(dir, 'state', 'briefs.cursor');
+  const first = await run(['changes', 'storage://briefs', '--cursor-file', cursor]);
+  assert.deepEqual([first.code, first.stdout, first.stderr], [0, '', "storage: watching storage://briefs from now. Run this again to see what's new.\n"]);
+  drive.add('added.md', briefsId, 'new');
+  assert.match((await run(['changes', 'storage://briefs', '--cursor-file', cursor])).stdout, /^(new|edited) +storage:\/\/briefs\/added\.md\n$/);
+  assert.equal((await run(['changes', 'storage://briefs', '--cursor-file', cursor])).stdout, '', 'nothing twice');
+  assert.equal((await run(['changes', 'storage://briefs'])).code, 2);
 });

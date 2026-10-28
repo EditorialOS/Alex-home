@@ -12,6 +12,7 @@ import type { HttpOptions } from './http.ts';
 import { Storage } from './storage.ts';
 import { StorageError } from './types.ts';
 import type { Access } from './types.ts';
+import { checkPattern } from './names.ts';
 import { MOUNT_NAME } from './uri.ts';
 
 export interface DriveConfig {
@@ -28,6 +29,8 @@ export interface MountConfig {
   /** A Drive folder id. */
   folder: string;
   access: Access;
+  /** How new files are named, such as `{date}-{name}`. */
+  fileAs?: string;
 }
 
 export interface Config {
@@ -39,7 +42,7 @@ export interface Config {
 const DRIVE_FIELDS = ['token', 'client_id', 'client_secret', 'refresh_token', 'api_url', 'token_url'];
 const REFRESH_FIELDS = ['client_id', 'client_secret', 'refresh_token'] as const;
 const SECRETS = ['token', 'client_secret', 'refresh_token'];
-const MOUNT_FIELDS = ['folder', 'access'];
+const MOUNT_FIELDS = ['folder', 'access', 'file_as'];
 const VARIABLE = /^\$([A-Za-z_][A-Za-z0-9_]*)$/;
 const FOLDER_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -81,6 +84,7 @@ export function openStorage(config: Config, env: NodeJS.ProcessEnv = process.env
     config.mounts.map((mount) => ({
       name: mount.name,
       access: mount.access,
+      fileAs: mount.fileAs,
       driver: new DriveDriver({ http: client, folder: mount.folder, apiUrl: config.drive.api_url && value(config.drive.api_url, 'api_url', env) }),
     })),
   );
@@ -168,7 +172,14 @@ function mountConfigs(raw: unknown, problems: string[]): MountConfig[] {
     if (folder === undefined) problems.push(`${where} needs a \`folder\`: a Drive folder's id or its link, or \`root\` for My Drive`);
     const access = mount.access ?? 'read';
     if (access !== 'read' && access !== 'write') problems.push(`${where}: \`access\` is \`read\` or \`write\``);
-    mounts.push({ name, folder: folder ?? '', access: access === 'write' ? 'write' : 'read' });
+    if (access === 'write' && folder === 'root') problems.push(`${where}: agents never write into My Drive itself. Make a folder for them, and mount that`);
+    const fileAs = mount.file_as;
+    if (fileAs !== undefined) {
+      const wrong = typeof fileAs === 'string' ? checkPattern(fileAs) : 'must be text, such as "{date}-{name}"';
+      if (wrong) problems.push(`${where}: \`file_as\` ${wrong}`);
+      else if (access !== 'write') problems.push(`${where}: \`file_as\` names new files, so it only goes on a mount with access: write`);
+    }
+    mounts.push({ name, folder: folder ?? '', access: access === 'write' ? 'write' : 'read', ...(typeof fileAs === 'string' ? { fileAs } : {}) });
   }
   if (mounts.length === 0 && !problems.some((problem) => problem.includes('`mounts'))) problems.push('`mounts` names no folders');
   return mounts;

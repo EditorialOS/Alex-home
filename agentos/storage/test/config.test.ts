@@ -87,3 +87,28 @@ test('a missing environment variable is named when Drive is first called, not be
   await assert.rejects(storage.stat('storage://briefs'), { code: 'config', message: 'storage://briefs: drive.token names $GDRIVE_TOKEN, and the environment has no $GDRIVE_TOKEN' });
   assert.deepEqual(signIn(config, {}), { method: 'token', missing: ['$GDRIVE_TOKEN'] });
 });
+
+test('filing patterns go on write mounts, and My Drive is never a write mount', async () => {
+  const config = await loadConfig(await configFile('drive:\n  token: $T\nmounts:\n  drafts: { folder: 1XyZ, access: write, file_as: "{date}-{name}" }\n'));
+  assert.equal(config.mounts[0]!.fileAs, '{date}-{name}');
+  await assert.rejects(
+    loadConfig(
+      await configFile(`
+drive:
+  token: $T
+mounts:
+  home: { folder: root, access: write }
+  briefs: { folder: 1AbC, file_as: "{date}-{name}" }
+  drafts: { folder: 1XyZ, access: write, file_as: "{date}/{name}" }
+`),
+    ),
+    (error: Error) => {
+      assert.deepEqual(error.message.split('\n  - ').slice(1), [
+        '`mounts.home`: agents never write into My Drive itself. Make a folder for them, and mount that',
+        '`mounts.briefs`: `file_as` names new files, so it only goes on a mount with access: write',
+        "`mounts.drafts`: `file_as` can't contain /: folders come from the address",
+      ]);
+      return true;
+    },
+  );
+});

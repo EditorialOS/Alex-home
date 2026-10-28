@@ -39,3 +39,8 @@ export function namesOf(path: string): string[] {
 export function joinPath(folder: string, name: string): string {
   return folder === '' ? name : `${folder}/${name}`;
 }
+
+/** Whether `path` is `prefix` or sits under it. */
+export function within(path: string, prefix: string): boolean {
+  return prefix === '' || path === prefix || path.startsWith(`${prefix}/`);
+}

@@ -90,7 +90,7 @@ test('a Google Doc reads as Markdown, or plain text if Drive refuses; a Sheet as
 
   const doc = await storage.stat('storage://briefs/Spring brief');
   assert.equal(doc.native, true);
-  assert.match(doc.revision, /^v\d+$/);
+  assert.match(doc.revision, /^t:2026-/);
   assert.equal(await storage.readText('storage://briefs/Spring brief'), '# Spring\n\nLaunch in March.\n');
   drive.noMarkdown = true;
   assert.equal(await storage.readText('storage://briefs/Spring brief'), '# Spring\n\nLaunch in March.\n');

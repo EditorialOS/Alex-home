@@ -1,18 +1,23 @@
 {
   "name": "@editorialos/storage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "storage:// for Google Drive: read what people write, list folders, and write new files. Agents never overwrite anything.",
+  "description": "storage:// for Google Drive: agents read what people write, file their work where it belongs, and never overwrite anything. A local MCP connector holds the keys.",
   "license": "UNLICENSED",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/addons/mcp.d.ts",
+      "default": "./dist/addons/mcp.js"
     }
   },
   "bin": {
-    "storage": "dist/src/cli.js"
+    "storage": "dist/src/cli.js",
+    "storage-mcp": "dist/addons/storage-mcp.js"
   },
   "files": [
     "dist",
@@ -31,14 +36,29 @@
   "dependencies": {
     "yaml": "^2.9.1"
   },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^3.25 || ^4.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^22.20.5",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^4.1.12"
   },
   "keywords": [
     "agents",
     "google-drive",
     "storage",
-    "markdown"
+    "markdown",
+    "mcp"
   ]
 }

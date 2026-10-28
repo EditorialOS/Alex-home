@@ -1,5 +1,5 @@
 // A Storage on the stand-in Drive: `drafts` (write) and `briefs` (read), each
-// its own folder, with waits recorded instead of slept.
+// its own folder, on the stand-in's clock, with waits recorded instead of slept.
 
 import { after } from 'node:test';
 import { fixedToken } from '../src/auth.ts';
@@ -19,7 +19,7 @@ export interface Setup {
   waits: number[];
 }
 
-export async function setup(options: { tokens?: (drive: FakeDrive) => Tokens } = {}): Promise<Setup> {
+export async function setup(options: { tokens?: (drive: FakeDrive) => Tokens; fileAs?: string } = {}): Promise<Setup> {
   const drive = await fakeDrive();
   after(() => drive.close());
   const folders = { drafts: drive.add('Agent drafts', undefined, '', FOLDER), briefs: drive.add('Briefs', undefined, '', FOLDER) };
@@ -30,10 +30,14 @@ export async function setup(options: { tokens?: (drive: FakeDrive) => Tokens } =
       waits.push(ms);
     },
   });
-  const storage = new Storage([
-    { name: 'drafts', access: 'write', driver: new DriveDriver({ http, folder: folders.drafts, apiUrl: drive.url }) },
-    { name: 'briefs', access: 'read', driver: new DriveDriver({ http, folder: folders.briefs, apiUrl: drive.url }) },
-  ]);
+  const storage = new Storage(
+    [
+      { name: 'drafts', access: 'write', fileAs: options.fileAs, driver: new DriveDriver({ http, folder: folders.drafts, apiUrl: drive.url }) },
+      { name: 'briefs', access: 'read', driver: new DriveDriver({ http, folder: folders.briefs, apiUrl: drive.url }) },
+    ],
+    // Storage keeps the stand-in's time, so "since" and "recent" line up with it.
+    { now: () => new Date(drive.clock()) },
+  );
   return { drive, storage, folders, waits };
 }
 
