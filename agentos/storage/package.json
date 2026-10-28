@@ -1,0 +1,44 @@
+{
+  "name": "@editorialos/storage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "storage:// for Google Drive: read what people write, list folders, and write new files. Agents never overwrite anything.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "bin": {
+    "storage": "dist/src/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SPEC.md",
+    "storage.example.yaml"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "node --test 'test/*.test.ts'"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "agents",
+    "google-drive",
+    "storage",
+    "markdown"
+  ]
+}

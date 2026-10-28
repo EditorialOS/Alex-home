@@ -1,0 +1,16 @@
+# Copy this to storage.yaml and fill it in. Secrets never go in this file:
+# write $NAME, and set NAME in the environment.
+
+drive:
+  # To try it out: an access token, good for an hour.
+  token: $GDRIVE_TOKEN
+
+  # For runs nobody is watching, use these three instead of `token`:
+  # client_id: 1234-abc.apps.googleusercontent.com
+  # client_secret: $GDRIVE_CLIENT_SECRET
+  # refresh_token: $GDRIVE_REFRESH_TOKEN
+
+mounts:
+  # A folder's link or its id. Read-only unless it says access: write.
+  briefs: { folder: "https://drive.google.com/drive/folders/REPLACE_WITH_FOLDER_ID" }
+  drafts: { folder: REPLACE_WITH_FOLDER_ID, access: write }
